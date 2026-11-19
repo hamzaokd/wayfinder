@@ -281,7 +281,26 @@ export function attributeEdits(trail: Trail, uses: readonly ToolUseLite[], roots
   }
 }
 
-export type WaitingItem = { session: string; isSelf: boolean; step: string; what?: string }
+/**
+ * A session with no saved plan (a fork, or a store that lost it) replays the
+ * plan updates its own conversation already holds, in order, so it carries on
+ * the plan instead of starting empty. Calls that were refused are skipped.
+ */
+export function rebuildFromHistory(trail: Trail, uses: readonly (ToolUseLite & { isError?: boolean })[], roots: readonly string[], now: number): Trail {
+  let out = trail
+  for (const use of uses) {
+    if (use.tool !== PROGRESS_TOOL || use.isError) continue
+    try {
+      out = applyPlan(out, use.input, { now })
+    } catch {
+      // A call the validation of today refuses (it changed since): replaying the rest still beats an empty plan.
+      continue
+    }
+  }
+  return out.planVersion === 0 ? trail : attributeEdits(out, uses, roots)
+}
+
+export type WaitingItem ={ session: string; isSelf: boolean; step: string; what?: string }
 
 /** Every open step, in every session, that waits on the user. */
 export function waitingOnYou(self: Trail, others: readonly Trail[]): WaitingItem[] {
@@ -343,6 +362,11 @@ export function stepAction(trail: Trail, s: Step): { label: string; prompt: stri
   if (s.status === 'doing' || first === s) return { label: '▶ Finish this step', prompt: `Finish ${name}, then stop and tell me where we are. Update the Wayfinder plan as you go.` }
   const from = first ? trail.steps.indexOf(first) + 1 : n
   return { label: '▶ Work up to here', prompt: `Work through the plan up to ${name} (steps ${from} to ${n}), then stop there and tell me where we are. Update the Wayfinder plan as you go.` }
+}
+
+/** Text from git (names, commit subjects) as one short quoted string: newlines escaped, 80 characters at most. */
+export function quoted(s: string): string {
+  return JSON.stringify(s.length > 80 ? `${s.slice(0, 79)}…` : s)
 }
 
 export function ago(ms: number): string {

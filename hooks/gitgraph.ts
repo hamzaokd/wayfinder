@@ -14,8 +14,14 @@ const BASE_KEEP = 5
 // Answers that only change when a tip moves: keyed by the hashes involved.
 const cache = new Map<string, string | undefined>()
 
+// The mod runs git on its own every few seconds, in repos it did not choose. A repo's own config
+// must not make that run a program (core.fsmonitor), and a read must not take the index lock.
+// Hooks are already off for $.process.run. Filters (gitattributes clean/smudge) can still run on
+// `status`, as they do when Claude or you run it there.
+export const GIT = ['git', '-c', 'core.fsmonitor=false', '--no-optional-locks'] as const
+
 export async function git($: $, cwd: string, args: string[], isRaw = false): Promise<string | undefined> {
-  const r = await $.process.run(['git', ...args], { cwd, timeoutMs: 10_000 })
+  const r = await $.process.run([...GIT, ...args], { cwd, timeoutMs: 10_000 })
   // A non-zero exit is an answer here ("not a repo", "no upstream"), not a failure.
   if (r.exitCode !== 0) return undefined
   // Porcelain lines start with a space that trimming would eat.
@@ -32,7 +38,7 @@ async function gitCached($: $, cwd: string, key: string, args: string[]): Promis
 }
 
 export async function isAncestor($: $, cwd: string, old: string, head: string): Promise<boolean> {
-  const r = await $.process.run(['git', 'merge-base', '--is-ancestor', old, head], { cwd, timeoutMs: 10_000 })
+  const r = await $.process.run([...GIT, 'merge-base', '--is-ancestor', old, head], { cwd, timeoutMs: 10_000 })
   return r.exitCode === 0
 }
 
