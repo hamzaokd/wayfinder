@@ -1,0 +1,5 @@
+{
+  "name": "wayfinder",
+  "owner": { "name": "wayfinder" },
+  "plugins": [{ "name": "wayfinder", "source": "./" }]
+}

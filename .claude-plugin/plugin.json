@@ -1,0 +1,6 @@
+{
+  "name": "wayfinder",
+  "version": "0.1.0",
+  "description": "A pane beside the chat showing this session's plan, git state and timeline, plus your other recent sessions.",
+  "types": "./types/index.d.ts"
+}

@@ -1,0 +1,116 @@
+export type StepStatus = 'todo' | 'doing' | 'done' | 'blocked' | 'dropped'
+
+export type Step = {
+  title: string
+  phase: string
+  status: StepStatus
+  /** What came out of the step: "yes, via role X", "p95 120ms". */
+  note?: string
+  waitingOn?: 'you' | 'claude'
+  /** What exactly it waits for: "run the benchmark on staging". */
+  waitingFor?: string
+  /** Added after the first plan: off plan. */
+  addedLate?: boolean
+  /** Why it was added or dropped. */
+  reason?: string
+  outOfOrder?: boolean
+  startedAt?: number
+  startedTurn?: number
+  /** When it was finished, or dropped. */
+  doneAt?: number
+  /** Repo root and branch where it ran. */
+  repo?: string
+  branch?: string
+  /** Files Claude edited while this step was current. */
+  files: string[]
+}
+
+export type Decision = { at: number; text: string; why?: string; step?: string; repo?: string; branch?: string }
+
+export type TrailEvent = {
+  at: number
+  kind: 'track' | 'branch' | 'commit' | 'rewrite' | 'step' | 'pane' | 'drift'
+  /** 'outside' = git changed while this session was not running git. */
+  origin: 'session' | 'outside'
+  repo: string
+  text: string
+  hash?: string
+  step?: string
+}
+
+export type Seen = { branch: string; heads: Record<string, string> }
+
+export type Trail = {
+  sessionId: string
+  goal?: string
+  whereWasI?: string
+  phases: string[]
+  steps: Step[]
+  decisions: Decision[]
+  events: TrailEvent[]
+  /** Per repo root: the branch and the heads last seen. */
+  seen: Record<string, Seen>
+  turn: number
+  planTurn: number
+  planVersion: number
+  /** Commits since the plan was last saved. */
+  commitsSincePlan: number
+  /** Notes for Claude's next prompt: outside work, pane edits. */
+  pending: string[]
+  hasNudged: boolean
+  updatedAt: number
+  /** When the user last sent a message: "since you left" counts from here. */
+  lastPromptAt: number
+  /** The step that was current at the end of the last transcript scan. */
+  activeStep?: string
+  lastMsgUuid?: string
+  /** The repo Claude touched last: new steps are placed there. */
+  lastRepo?: string
+  /** Files edited while no step was current. */
+  unplannedFiles: string[]
+}
+
+export type Lane = {
+  branch: string
+  /** 1 = this work, 0.55 = may matter, 0.25 = recent but unrelated. */
+  relevance: number
+  why: string
+  isBase?: boolean
+  isCurrent?: boolean
+  tip: string
+  /** The commit on another lane this branch grew from. */
+  forkFrom?: string
+}
+
+export type GraphCommit = { hash: string; parents: string[]; at: number; subject: string; lane: number }
+
+export type Stash = { name: string; subject: string; at: number; parent: string; branch?: string }
+
+export type RepoGraph = { lanes: Lane[]; commits: GraphCommit[]; stashes: Stash[]; hidden: number; skipped: number }
+
+export type RepoLive = {
+  root: string
+  name: string
+  branch: string
+  head: string
+  dirty: number
+  dirtyFiles: string[]
+  ahead?: number
+  behind?: number
+  base?: string
+  sinceBase?: number
+  behindBase?: number
+  graph?: RepoGraph
+}
+
+declare module 'claude-code' {
+  interface PluginState {
+    wayfinder: {
+      trail: Shaped<Trail | null>
+      repos: Shaped<RepoLive[]>
+      others: Shaped<Trail[]>
+      expanded: Shaped<Record<string, boolean>>
+      selected: Shaped<string | null>
+    }
+  }
+}
