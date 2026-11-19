@@ -295,7 +295,8 @@ export const register: Register = on => {
     await track($, cwd)
     cwdRoot = rootOf.get(cwd) ?? undefined
     // A failed rebuild leaves the plan empty and says so; it must not stop the git refresh below.
-    if (!stored) await rebuild($, now).catch(err => $.ui.status(`wayfinder: could not rebuild the plan from this conversation: ${String(err).slice(0, 80)}`))
+    // "No plan" rather than "nothing saved": a fork opened before this rebuild existed saved an empty one.
+    if (!stored || stored.planVersion === 0) await rebuild($, now).catch(err => $.ui.status(`wayfinder: could not rebuild the plan from this conversation: ${String(err).slice(0, 80)}`))
     // Anything that happened while the session was closed counts as outside.
     void tick($)
     $.clock.every(TICK_MS, () => void tick($))
