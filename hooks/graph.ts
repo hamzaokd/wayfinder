@@ -27,8 +27,6 @@ export type Item = { t: number; o: number; lane: number; phase?: string } & (
   | { kind: 'merge'; into: string }
 )
 
-export const SHOW_ALL = '__all'
-
 export function phaseState(steps: readonly Step[]): PhaseState {
   const live = steps.filter(s => s.status !== 'dropped')
   if (live.length > 0 && live.every(s => s.status === 'done')) return 'done'
@@ -36,9 +34,9 @@ export function phaseState(steps: readonly Step[]): PhaseState {
   return steps.every(s => s.status === 'dropped') ? 'done' : 'future'
 }
 
-/** Finished phases fold into one row unless "show all" is on; the current and future ones stay open. */
-export function isPhaseOpen(state: PhaseState, expanded: Readonly<Record<string, boolean>>): boolean {
-  return state !== 'done' || expanded[SHOW_ALL] === true
+/** A click on a phase flips it; until then finished phases are folded and the rest are open. */
+export function isPhaseOpen(title: string, state: PhaseState, expanded: Readonly<Record<string, boolean>>): boolean {
+  return expanded[title] ?? state !== 'done'
 }
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
@@ -67,7 +65,7 @@ export function items(v: GraphView): { list: Item[]; lanes: Lane[]; current: num
       title,
       pi,
       state,
-      isOpen: isPhaseOpen(state, v.expanded),
+      isOpen: isPhaseOpen(title, state, v.expanded),
       start: starts.length ? Math.min(...starts) : Infinity,
       end: state === 'done' ? (ends.length ? Math.max(...ends) : -Infinity) : Infinity,
       count: own.filter(s => s.status === 'done').length,
@@ -177,7 +175,15 @@ export function stepDetails(v: GraphView, s: Step): string {
 }
 
 /** The graph as one SVG. Light and dark follow the system's color scheme. */
-export function graphSvg(v: GraphView): { source: string; width: number; height: number } {
+/** A clickable band of the drawing, in its own pixels, and what it opens. */
+export type Hit = { y1: number; y2: number; id: string }
+
+/**
+ * The graph as one SVG. Light and dark follow the system's color scheme.
+ * `seen` holds the row ids drawn last time: rows not in it animate in, and the
+ * rows below them slide down from where they were instead of jumping.
+ */
+export function graphSvg(v: GraphView, seen?: ReadonlySet<string>): { source: string; width: number; height: number; hits: Hit[]; ids: string[] } {
   const { list, lanes } = items(v)
   const laneX = (i: number) => 18 + i * 24
   const textX = Math.max(70, laneX(lanes.length - 1) + 28)
@@ -201,7 +207,6 @@ export function graphSvg(v: GraphView): { source: string; width: number; height:
 
   const ys: number[] = []
   const parts: string[] = []
-  const dots: string[] = []
   const blocks: string[] = []
   const at = new Map<string, { x: number; y: number }>()
   let y = ly + 14
@@ -213,10 +218,19 @@ export function graphSvg(v: GraphView): { source: string; width: number; height:
   const phaseSpan = new Map<string, { y1: number; y2: number; state: PhaseState }>()
   let nowY = y
   let lastY = y
-  // A hover target over the whole row: the tooltip shows the full text.
-  const hit = (y1: number, y2: number, title: string) => parts.push(`<rect x="0" y="${y1}" width="${W}" height="${y2 - y1}" fill="transparent"><title>${esc(title)}</title></rect>`)
+  const hits: Hit[] = []
+  const rowSvg: string[] = []
+  const rowTop: number[] = []
+  let row: string[] = []
+  // A band over the whole row: a hover tooltip with the full text, and the click target.
+  const hit = (y1: number, y2: number, title: string, id?: string) => {
+    row.push(`<rect x="0" y="${y1}" width="${W}" height="${y2 - y1}" fill="transparent"><title>${esc(title)}</title></rect>`)
+    if (id) hits.push({ y1, y2, id })
+  }
 
   list.forEach((it, k) => {
+    row = []
+    rowTop[k] = y
     const gap = k === 0 ? 8 : it.kind === 'commit' && it.isCompact ? 9 : it.kind === 'phase' ? 28 : 22
     y += gap
     const x = laneX(it.lane)
@@ -225,13 +239,13 @@ export function graphSvg(v: GraphView): { source: string; width: number; height:
     if (it.kind === 'commit') {
       at.set(it.c.hash, { x, y })
       const color = it.tag ? '#BA7517' : laneColor(lanes[it.lane]!, it.lane)
-      dots.push(`<circle cx="${x}" cy="${y}" r="${it.isCompact ? 3 : 4.5}" fill="${color}" opacity="${it.tag ? 1 : op}"/>`)
+      row.push(`<circle cx="${x}" cy="${y}" r="${it.isCompact ? 3 : 4.5}" fill="${color}" opacity="${it.tag ? 1 : op}"/>`)
       if (!it.isCompact) {
         const text = it.label ?? `${it.c.hash.slice(0, 7)} ${it.c.subject}`
         const tail = it.tag && !it.label ? ` · ${it.tag} · ${ago(v.now - it.c.at)}` : it.isOwn || it.label ? ` · ${ago(v.now - it.c.at)}` : ''
         const cls = it.tag ? 'ev warn' : it.isOwn ? 'ev' : 'ev muted'
-        parts.push(`<text x="${textX}" y="${y + 4}" class="${cls}" opacity="${it.label ? op : 1}">${esc(cut(text, chars(7.2) - tail.length))}<tspan class="muted">${esc(tail)}</tspan></text>`)
-        hit(y - 10, y + 10, `${it.c.hash.slice(0, 10)} ${it.c.subject}\n${lane?.branch ?? ''}${it.tag ? ` · ${it.tag}` : ''} · ${ago(v.now - it.c.at)}`)
+        row.push(`<text x="${textX}" y="${y + 4}" class="${cls}" opacity="${it.label ? op : 1}">${esc(cut(text, chars(7.2) - tail.length))}<tspan class="muted">${esc(tail)}</tspan></text>`)
+        hit(y - 10, y + 10, `${it.c.hash.slice(0, 10)} ${it.c.subject}\n${lane?.branch ?? ''}${it.tag ? ` · ${it.tag}` : ''} · ${ago(v.now - it.c.at)}`, `commit:${it.c.hash}`)
       }
       nowY = Math.max(nowY, y)
     } else if (it.kind === 'step') {
@@ -241,63 +255,77 @@ export function graphSvg(v: GraphView): { source: string; width: number; height:
       if (!isFuture) nowY = Math.max(nowY, y)
       if (s.addedLate && s.status !== 'dropped') {
         const fill = s.status === 'done' ? 'fill="#EF9F27"' : 'class="diamond-open"'
-        dots.push(`<path d="M${x} ${y - 8} l8 8 l-8 8 l-8 -8 Z" ${fill}/>`)
+        row.push(`<path d="M${x} ${y - 8} l8 8 l-8 8 l-8 -8 Z" ${fill}/>`)
       } else if (s.status === 'done') {
-        dots.push(`<circle cx="${x}" cy="${y}" r="7.5" class="done-fill"/><path d="M${x - 3.5} ${y} l2.5 2.6 l4.5 -5" class="check"/>`)
+        row.push(`<circle cx="${x}" cy="${y}" r="7.5" class="done-fill"/><path d="M${x - 3.5} ${y} l2.5 2.6 l4.5 -5" class="check"/>`)
       } else if (s.status === 'doing') {
-        dots.push(`<circle cx="${x}" cy="${y}" r="12" class="halo"/><circle cx="${x}" cy="${y}" r="7.5" class="doing-ring"/><circle cx="${x}" cy="${y}" r="3" class="doing-fill"/>`)
+        row.push(`<circle cx="${x}" cy="${y}" r="12" class="halo"/><circle cx="${x}" cy="${y}" r="7.5" class="doing-ring"/><circle cx="${x}" cy="${y}" r="3" class="doing-fill"/>`)
       } else if (s.status === 'blocked') {
-        dots.push(`<circle cx="${x}" cy="${y}" r="7.5" class="blocked-fill"/><path d="M${x - 3} ${y - 3} l6 6 M${x + 3} ${y - 3} l-6 6" class="check"/>`)
+        row.push(`<circle cx="${x}" cy="${y}" r="7.5" class="blocked-fill"/><path d="M${x - 3} ${y - 3} l6 6 M${x + 3} ${y - 3} l-6 6" class="check"/>`)
       } else if (s.status === 'dropped') {
-        dots.push(`<circle cx="${x}" cy="${y}" r="5" class="todo-ring" opacity="0.5"/>`)
+        row.push(`<circle cx="${x}" cy="${y}" r="5" class="todo-ring" opacity="0.5"/>`)
       } else {
-        dots.push(`<circle cx="${x}" cy="${y}" r="6.5" class="todo-ring"/>`)
+        row.push(`<circle cx="${x}" cy="${y}" r="6.5" class="todo-ring"/>`)
       }
       const here = s.status === 'doing' ? ' · you are here' : ''
-      parts.push(`<text x="${textX}" y="${y + 5}" class="step ${s.status}">${esc(cut(`${it.index + 1}. ${s.title}`, chars(7.6) - here.length))}${here}</text>`)
+      row.push(`<text x="${textX}" y="${y + 5}" class="step ${s.status}">${esc(cut(`${it.index + 1}. ${s.title}`, chars(7.6) - here.length))}${here}</text>`)
       const line = stepLine(v, s)
       if (line) {
         y += 16
-        parts.push(`<text x="${textX}" y="${y + 4}" class="${line.cls}">${esc(cut(line.text, chars(6.6)))}</text>`)
+        row.push(`<text x="${textX}" y="${y + 4}" class="${line.cls}">${esc(cut(line.text, chars(6.6)))}</text>`)
       }
-      hit(y0 - 11, y + 9, stepDetails(v, s))
+      hit(y0 - 11, y + 9, stepDetails(v, s), `step:${s.title}`)
     } else if (it.kind === 'decision') {
       nowY = Math.max(nowY, y)
-      dots.push(`<path d="M${x} ${y - 5} l5 5 l-5 5 l-5 -5 Z" class="decision"/>`)
-      parts.push(`<text x="${textX}" y="${y + 4}" class="sub decision-text">${esc(cut(`Decision: ${it.text}`, chars(6.6)))}</text>`)
+      row.push(`<path d="M${x} ${y - 5} l5 5 l-5 5 l-5 -5 Z" class="decision"/>`)
+      row.push(`<text x="${textX}" y="${y + 4}" class="sub decision-text">${esc(cut(`Decision: ${it.text}`, chars(6.6)))}</text>`)
       hit(y - 10, y + 10, `Decision: ${it.text}${it.why ? `\nwhy: ${it.why}` : ''}`)
     } else if (it.kind === 'stash') {
       const o = it.isFaded ? 0.55 : 1
-      dots.push(`<g opacity="${o}"><line x1="${x}" y1="${y}" x2="${x + 12}" y2="${y}" class="stash-line"/><rect x="${x + 12}" y="${y - 5}" width="10" height="10" rx="2" class="stash"/></g>`)
+      row.push(`<g opacity="${o}"><line x1="${x}" y1="${y}" x2="${x + 12}" y2="${y}" class="stash-line"/><rect x="${x + 12}" y="${y - 5}" width="10" height="10" rx="2" class="stash"/></g>`)
       const text = `${it.name} ${it.subject.replace(/^(WIP on|On) [^:]+: /, '')} · ${ago(v.now - it.at)}`
-      parts.push(`<text x="${textX}" y="${y + 4}" class="sub stash-text" opacity="${o}">${esc(cut(text, chars(6.6)))}</text>`)
+      row.push(`<text x="${textX}" y="${y + 4}" class="sub stash-text" opacity="${o}">${esc(cut(text, chars(6.6)))}</text>`)
       hit(y - 10, y + 10, `${it.name}: ${it.subject}`)
     } else if (it.kind === 'dirty') {
       nowY = Math.max(nowY, y)
-      dots.push(`<circle cx="${x}" cy="${y}" r="5" class="dirty"/>`)
-      parts.push(`<text x="${textX}" y="${y + 4}" class="sub">${plural(it.count, 'file')} changed, not committed</text>`)
+      row.push(`<circle cx="${x}" cy="${y}" r="5" class="dirty"/>`)
+      row.push(`<text x="${textX}" y="${y + 4}" class="sub">${plural(it.count, 'file')} changed, not committed</text>`)
       hit(y - 10, y + 10, v.repo.dirtyFiles.join('\n'))
     } else if (it.kind === 'phase') {
       if (it.isOpen) {
         phaseSpan.set(it.title, { y1: y - 12, y2: y + 6, state: it.state })
-        parts.push(`<text x="${textX}" y="${y + 5}" class="phase ${it.state}">${esc(cut(it.title, 30))}<tspan class="phase-sub"> · ${esc(it.summary)}</tspan></text>`)
+        row.push(`<text x="${textX}" y="${y + 5}" class="phase ${it.state}">▾ ${esc(cut(it.title, 30))}<tspan class="phase-sub"> · ${esc(it.summary)}</tspan></text>`)
+        hit(y - 12, y + 9, `${it.title}: click to fold`, `phase:${it.title}`)
       } else {
-        dots.push(`<circle cx="${x}" cy="${y}" r="7.5" class="done-fill"/><path d="M${x - 3.5} ${y} l2.5 2.6 l4.5 -5" class="check"/>`)
+        row.push(`<circle cx="${x}" cy="${y}" r="7.5" class="done-fill"/><path d="M${x - 3.5} ${y} l2.5 2.6 l4.5 -5" class="check"/>`)
         blocks.push(`<rect x="${laneX(0) - 12}" y="${y - 14}" width="${W - laneX(0) + 8}" height="28" rx="7" class="block-done"/>`)
-        parts.push(`<text x="${textX}" y="${y + 5}" class="phase done">${esc(cut(it.title, 30))}<tspan class="phase-sub"> · ${esc(it.summary)}</tspan></text>`)
+        row.push(`<text x="${textX}" y="${y + 5}" class="phase done">▸ ${esc(cut(it.title, 30))}<tspan class="phase-sub"> · ${esc(it.summary)}</tspan></text>`)
         const own = v.trail.steps.filter(s => s.phase === it.title)
-        hit(y - 14, y + 14, `${it.title}: ${it.summary}\n${own.map(s => `${s.status === 'done' ? '✓' : '–'} ${s.title}${s.note ? `: ${s.note}` : ''}`).join('\n')}`)
+        hit(y - 14, y + 14, `${it.title}: ${it.summary}\n${own.map(s => `${s.status === 'done' ? '✓' : '–'} ${s.title}${s.note ? `: ${s.note}` : ''}`).join('\n')}`, `phase:${it.title}`)
         nowY = Math.max(nowY, y)
       }
     } else {
       const bx = laneX(lanes.findIndex(l => l.isBase))
-      parts.push(`<path d="M${x} ${y - 12} C${x} ${y + 4}, ${bx} ${y - 4}, ${bx} ${y + 12}" class="rail-todo" fill="none"/>`)
-      parts.push(`<text x="${textX}" y="${y + 8}" class="sub">Merge into ${esc(it.into)} (planned)</text>`)
+      row.push(`<path d="M${x} ${y - 12} C${x} ${y + 4}, ${bx} ${y - 4}, ${bx} ${y + 12}" class="rail-todo" fill="none"/>`)
+      row.push(`<text x="${textX}" y="${y + 8}" class="sub">Merge into ${esc(it.into)} (planned)</text>`)
       y += 12
     }
     if (it.phase && phaseSpan.has(it.phase)) phaseSpan.get(it.phase)!.y2 = y + 10
     ys[k] = y
     lastY = y
+    rowSvg[k] = row.join('')
+  })
+
+  // New rows ease in; every row below them starts where it was and slides down.
+  const ids = list.map(rowKey)
+  const hasSeen = seen !== undefined && seen.size > 0
+  let added = 0
+  const rowsOut = rowSvg.map((svg, k) => {
+    if (hasSeen && !seen.has(ids[k]!)) {
+      added += ys[k]! - rowTop[k]!
+      return `<g class="enter">${svg}</g>`
+    }
+    return added ? `<g class="slide" style="--dy:-${added}px">${svg}</g>` : svg
   })
 
   for (const span of phaseSpan.values()) blocks.push(`<rect x="${laneX(0) - 12}" y="${span.y1}" width="${W - laneX(0) + 8}" height="${span.y2 - span.y1}" rx="8" class="block-${span.state}"/>`)
@@ -360,13 +388,27 @@ export function graphSvg(v: GraphView): { source: string; width: number; height:
   .ev { font-family: ui-monospace, Consolas, monospace; font-size: 12px; } .warn { fill: var(--warn); }
   .muted { fill: var(--muted); }
   rect[fill="transparent"]:hover { fill: var(--tint); }
+  @keyframes enter { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: none; } }
+  @keyframes slide { from { transform: translateY(var(--dy)); } to { transform: none; } }
+  .enter { animation: enter .45s ease-out both; } .slide { animation: slide .4s ease-out both; }
+  @media (prefers-reduced-motion: reduce) { .enter, .slide { animation: none; } }
 </style>
-${blocks.join('')}${lines.join('')}${dots.join('')}${legend.join('')}${parts.join('')}
+${blocks.join('')}${lines.join('')}${rowsOut.join('')}${legend.join('')}${parts.join('')}
 </svg>`
-  return { source, width: W, height }
+  return { source, width: W, height, hits, ids }
 }
 
-export type TextLine = { text: string; color?: 'success' | 'suggestion' | 'error' | 'warning'; dim?: boolean }
+/** A row's identity across redraws: what "new" is measured against. */
+export function rowKey(it: Item): string {
+  if (it.kind === 'step') return `step:${it.s.title}`
+  if (it.kind === 'phase') return `phase:${it.title}`
+  if (it.kind === 'commit') return `commit:${it.c.hash}`
+  if (it.kind === 'decision') return `decision:${it.t}:${it.text}`
+  if (it.kind === 'stash') return `stash:${it.subject}:${it.at}`
+  return it.kind
+}
+
+export type TextLine = { text: string; color?: 'success' | 'suggestion' | 'error' | 'warning'; dim?: boolean; id?: string }
 
 /** The terminal has no Svg: the same rows, one per line, indented by lane. */
 export function graphText(v: GraphView): TextLine[] {
@@ -374,12 +416,12 @@ export function graphText(v: GraphView): TextLine[] {
   const out: TextLine[] = [{ text: lanes.map(l => `${l.isCurrent ? '●' : '○'} ${l.branch}`).join('   '), dim: true }]
   const pad = (lane: number) => '│ '.repeat(lane)
   for (const it of list) {
-    if (it.kind === 'phase') out.push({ text: `▌ ${it.title} · ${it.summary}`, color: it.state === 'current' ? 'suggestion' : undefined, dim: it.state !== 'current' })
-    else if (it.kind === 'commit' && !it.isCompact) out.push({ text: `${pad(it.lane)}* ${it.label ?? `${it.c.hash.slice(0, 7)} ${it.c.subject}`}${it.tag ? ` · ${it.tag}` : ''}`, color: it.tag ? 'warning' : undefined, dim: !it.isOwn && !it.tag })
+    if (it.kind === 'phase') out.push({ text: `${it.isOpen ? '▾' : '▸'} ${it.title} · ${it.summary}`, color: it.state === 'current' ? 'suggestion' : undefined, dim: it.state !== 'current', id: rowKey(it) })
+    else if (it.kind === 'commit' && !it.isCompact) out.push({ text: `${pad(it.lane)}* ${it.label ?? `${it.c.hash.slice(0, 7)} ${it.c.subject}`}${it.tag ? ` · ${it.tag}` : ''}`, color: it.tag ? 'warning' : undefined, dim: !it.isOwn && !it.tag, id: rowKey(it) })
     else if (it.kind === 'step') {
       const s = it.s
       const node = s.addedLate ? '◆' : { done: '●', doing: '◉', blocked: '✖', todo: '○', dropped: '⊘' }[s.status]
-      out.push({ text: `${pad(it.lane)}${node} ${it.index + 1}. ${s.title}${s.status === 'doing' ? ' · you are here' : ''}`, color: s.status === 'done' ? 'success' : s.status === 'doing' ? 'suggestion' : s.status === 'blocked' ? 'error' : undefined, dim: s.status === 'todo' || s.status === 'dropped' })
+      out.push({ text: `${pad(it.lane)}${node} ${it.index + 1}. ${s.title}${s.status === 'doing' ? ' · you are here' : ''}`, color: s.status === 'done' ? 'success' : s.status === 'doing' ? 'suggestion' : s.status === 'blocked' ? 'error' : undefined, dim: s.status === 'todo' || s.status === 'dropped', id: rowKey(it) })
       const line = stepLine(v, s)
       if (line) out.push({ text: `${pad(it.lane)}    ${line.text}`, color: line.cls.includes('drift') || line.cls.includes('waiting') ? 'warning' : undefined, dim: line.cls === 'sub' })
     } else if (it.kind === 'decision') out.push({ text: `${pad(it.lane)}◇ Decision: ${it.text}`, dim: true })

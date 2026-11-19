@@ -97,7 +97,7 @@ const str = (v: unknown, name: string, max: number): string | undefined => {
   return v.trim().slice(0, max) || undefined
 }
 
-type Parsed = Pick<Step, 'title' | 'phase' | 'status' | 'note' | 'waitingOn' | 'waitingFor'>
+type Parsed = Pick<Step, 'title' | 'phase' | 'status' | 'note' | 'waitingOn' | 'waitingFor' | 'detail'>
 
 function parsePhases(raw: unknown): { phases: string[]; steps: Parsed[] } {
   if (!Array.isArray(raw)) throw new Error('phases must be an array of { title, steps }')
@@ -125,6 +125,7 @@ function parsePhases(raw: unknown): { phases: string[]; steps: Parsed[] } {
         note: str(s.note, `${at}.note`, 300),
         waitingOn: s.waitingOn as Step['waitingOn'],
         waitingFor: str(s.waitingFor, `${at}.waitingFor`, 160),
+        detail: str(s.detail, `${at}.detail`, 300),
       })
     })
   })
@@ -345,23 +346,47 @@ export function sinceYouLeft(trail: Trail, others: readonly Trail[], stashes: re
 }
 
 /**
- * The one thing worth doing from a step, as a draft prompt: work up to it,
- * say you did your part, recap it, or bring it back.
+ * What a click on a step offers. `main` is sent to this session, where the work
+ * happens; `side` is a side question answered in the pane (like /btw), never
+ * added to the chat; `mark` flips the step done or not.
  */
-export function stepAction(trail: Trail, s: Step): { label: string; prompt: string } {
+export type MenuOption = { label: string; kind: 'main' | 'side' | 'mark'; prompt?: string }
+
+export function stepMenu(trail: Trail, s: Step, now: number): { header: string; question: string; options: MenuOption[] } {
   const n = trail.steps.indexOf(s) + 1
   const name = `step ${n} "${s.title}"`
+  const isOpen = s.status !== 'done' && s.status !== 'dropped'
+  const when = s.doneAt ? `${s.status === 'dropped' ? 'dropped' : 'done'} ${ago(now - s.doneAt)}` : s.startedAt ? `started ${ago(now - s.startedAt)}` : 'not started'
+  const lines = [
+    `${n}. ${s.title} (${s.status}, ${when})`,
+    s.detail ?? '',
+    s.note ? `Result: ${s.note}` : '',
+    isOpen && s.waitingOn ? `Waiting on ${s.waitingOn}${s.waitingFor ? `: ${s.waitingFor}` : ''}` : '',
+    s.addedLate ? `Not in the first plan: ${s.reason ?? 'no reason given'}` : '',
+    s.status === 'dropped' ? `Dropped: ${s.reason ?? 'no reason given'}` : '',
+    s.files.length ? `Files: ${s.files.slice(0, 8).map(baseName).join(', ')}${s.files.length > 8 ? ` +${s.files.length - 8}` : ''}` : '',
+    'What do you want to do?',
+  ]
+  const options: MenuOption[] = []
   if (s.status === 'done') {
-    const files = s.files.length ? ` (${s.files.slice(0, 6).map(baseName).join(', ')})` : ''
-    return { label: 'Recap', prompt: `Recap ${name}: what changed${files}, what we decided, and anything left open.` }
+    options.push({ label: 'Recap it (side answer)', kind: 'side', prompt: `In a few lines, recap ${name}: what changed, what we decided, and anything left open.` })
+    options.push({ label: 'Mark not done', kind: 'mark' })
+  } else if (s.status === 'dropped') {
+    options.push({ label: 'Bring it back', kind: 'main', prompt: `Bring back ${name} (dropped: ${s.reason ?? 'no reason given'}). Put it back in the plan and say where it fits.` })
+    options.push({ label: 'Why dropped? (side answer)', kind: 'side', prompt: `In a few lines: why was ${name} dropped, and does anything still depend on it?` })
+  } else {
+    const open = trail.steps.filter(x => x.status !== 'done' && x.status !== 'dropped')
+    const first = open[0]
+    if (s.waitingOn === 'you') options.push({ label: 'I did my part', kind: 'main', prompt: `Done on my side: ${s.waitingFor ?? s.title}. Continue with ${name}.` })
+    else if (s.status === 'doing' || first === s) options.push({ label: 'Continue this step', kind: 'main', prompt: `Finish ${name}, then stop and tell me where we are. Update the Wayfinder plan as you go.` })
+    else {
+      const from = first ? trail.steps.indexOf(first) + 1 : n
+      options.push({ label: 'Work up to here', kind: 'main', prompt: `Work through the plan up to ${name} (steps ${from} to ${n}), then stop there and tell me where we are. Update the Wayfinder plan as you go.` })
+    }
+    options.push({ label: 'Explain it (side answer)', kind: 'side', prompt: `In a few lines: what does ${name} involve, why is it in the plan, and what is left before it is done?` })
+    options.push({ label: 'Mark done', kind: 'mark' })
   }
-  if (s.status === 'dropped') return { label: 'Bring back', prompt: `Bring back ${name} (dropped: ${s.reason ?? 'no reason given'}). Put it back in the plan and say where it fits.` }
-  if (s.waitingOn === 'you') return { label: 'I did it', prompt: `Done on my side: ${s.waitingFor ?? s.title}. Continue with ${name}.` }
-  const open = trail.steps.filter(x => x.status !== 'done' && x.status !== 'dropped')
-  const first = open[0]
-  if (s.status === 'doing' || first === s) return { label: '▶ Finish this step', prompt: `Finish ${name}, then stop and tell me where we are. Update the Wayfinder plan as you go.` }
-  const from = first ? trail.steps.indexOf(first) + 1 : n
-  return { label: '▶ Work up to here', prompt: `Work through the plan up to ${name} (steps ${from} to ${n}), then stop there and tell me where we are. Update the Wayfinder plan as you go.` }
+  return { header: `Step ${n}`, question: lines.filter(Boolean).join('\n'), options }
 }
 
 /** Text from git (names, commit subjects) as one short quoted string: newlines escaped, 80 characters at most. */

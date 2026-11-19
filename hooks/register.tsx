@@ -3,7 +3,7 @@ import type { EngineInterface, Register } from 'claude-code'
 
 import type { RepoLive, Seen, Trail, TrailEvent } from '../types'
 import { git, isAncestor, repoGraph, repoRoot, snapshot } from './gitgraph'
-import { graphSvg, graphText, phaseState, SHOW_ALL } from './graph'
+import { graphSvg, graphText, isPhaseOpen, phaseState } from './graph'
 import type { GraphView } from './graph'
 import {
   ago,
@@ -21,10 +21,10 @@ import {
   pushEvents,
   repoName,
   sinceYouLeft,
-  stepAction,
+  stepMenu,
   waitingOnYou,
 } from './lib'
-import type { PlanInput, ToolUseLite } from './lib'
+import type { MenuOption, PlanInput, ToolUseLite } from './lib'
 
 type $ = EngineInterface
 
@@ -38,9 +38,11 @@ const trail = atom({ plugin: 'wayfinder', key: 'trail' } as const, null, { shape
 const repos = atom({ plugin: 'wayfinder', key: 'repos' } as const, [], { shape: 'repos-2' })
 const others = atom({ plugin: 'wayfinder', key: 'others' } as const, [], { shape: 'others-2' })
 const expanded = atom({ plugin: 'wayfinder', key: 'expanded' } as const, {}, { shape: 'expanded-1' })
-// The row whose details the card shows: a rowId, or null for the current step.
-const selected = atom({ plugin: 'wayfinder', key: 'selected' } as const, null, { shape: 'selected-1' })
+// A side question's answer, shown in the pane and never added to the chat (like /btw).
+const aside = atom({ plugin: 'wayfinder', key: 'aside' } as const, null, { shape: 'aside-1' })
 const OTHERS_KEY = '__others'
+// Row ids each repo's graph drew last time: what is new on the next draw animates in.
+const drawnRows = new Map<string, Set<string>>()
 
 const DESCRIPTION = `Records this session's plan so the user can see where the work stands in the Wayfinder pane beside the chat: a branch graph with the plan's phases and steps on it.
 
@@ -52,6 +54,7 @@ Call it as soon as the work has more than one step, and again whenever a step st
   - status: todo, doing, done, blocked, or dropped. Exactly one step should be doing unless the work is waiting.
   - note: the result of a finished step ("yes, via role X", "p95 120ms").
   - waitingOn: "you" when the step waits on the user, "claude" when it waits on you; waitingFor: what exactly ("run the benchmark on staging").
+  - detail: one sentence on what the step is for, so the user knows what it means when they click it, future steps above all ("prove the export handles 1M rows within 2 s").
 - change.reason: required whenever you add, drop, remove or reorder steps compared with the previous plan. Say plainly why the plan changed; the pane shows it as going off plan. Never hide a change by renaming a step.
 - decisions: new decisions taken since the last call, each { text, why } ("stream rows instead of buffering", "memory on 1M rows"). Record the ones the user would want to remember later; don't repeat old ones.
 
@@ -65,6 +68,7 @@ const STEP_SCHEMA = {
     note: { type: 'string' },
     waitingOn: { type: 'string', enum: ['you', 'claude'] },
     waitingFor: { type: 'string' },
+    detail: { type: 'string' },
   },
   required: ['title', 'status'],
 }
@@ -139,7 +143,8 @@ async function syncNow($: $, origin: 'session' | 'outside'): Promise<void> {
   )
   const primary = primaryRoot(t, lives)
   lives.sort((a, b) => Number(b.root === primary) - Number(a.root === primary))
-  await update($, repos, () => lives)
+  // Unchanged repos are not written again: every write redraws the graph.
+  if (JSON.stringify(await read($, repos)) !== JSON.stringify(lives)) await update($, repos, () => lives)
 
   const step = origin === 'session' ? currentStep(t.steps)?.title : undefined
   const seen: Record<string, Seen> = { ...t.seen }
@@ -206,7 +211,7 @@ async function refreshOthers($: $): Promise<void> {
     .filter(t => t && Array.isArray(t.steps) && Array.isArray(t.events) && now - t.updatedAt < OTHERS_DAYS * 86_400_000)
     .sort((a, b) => b.updatedAt - a.updatedAt)
     .slice(0, 8)
-  await update($, others, () => list)
+  if (JSON.stringify(await read($, others)) !== JSON.stringify(list)) await update($, others, () => list)
 }
 
 async function tick($: $): Promise<void> {
@@ -249,20 +254,64 @@ async function togglePhase($: $, title: string, isOpen: boolean): Promise<void> 
   await update($, expanded, cur => ({ ...cur, [title]: !isOpen }))
 }
 
-async function select($: $, id: string | null): Promise<void> {
-  await update($, selected, cur => (cur === id ? null : id))
+/** What a click on a row of the graph does: fold a phase, or open a step's or a commit's dialog. */
+async function openRow($: $, id: string): Promise<void> {
+  const t = await read($, trail)
+  if (!t) return
+  if (id.startsWith('phase:')) {
+    const title = id.slice('phase:'.length)
+    const state = phaseState(t.steps.filter(s => s.phase === title))
+    await togglePhase($, title, isPhaseOpen(title, state, await read($, expanded)))
+    return
+  }
+  if (id.startsWith('step:')) {
+    const s = t.steps.find(x => `step:${x.title}` === id)
+    if (!s) return
+    const menu = stepMenu(t, s, await $.clock.now())
+    const choice = await ask($, menu.question, menu.header, menu.options.map(o => o.label))
+    const picked = menu.options.find(o => o.label === choice)
+    if (picked) await act($, picked, s.title)
+    return
+  }
+  if (id.startsWith('commit:')) {
+    const hash = id.slice('commit:'.length)
+    const c = (await read($, repos)).flatMap(r => r.graph?.commits ?? []).find(x => x.hash === hash)
+    if (!c) return
+    const question = `${hash.slice(0, 10)} ${c.subject}\n${ago((await $.clock.now()) - c.at)}\nWhat do you want to do?`
+    const explain: MenuOption = { label: 'Explain it (side answer)', kind: 'side', prompt: `In a few lines: what did commit ${hash.slice(0, 7)} ("${c.subject}") change, and how does it fit the plan?` }
+    const choice = await ask($, question, 'Commit', [explain.label, 'Close'])
+    if (choice === explain.label) await act($, explain, `Commit ${hash.slice(0, 7)}`)
+  }
 }
 
-async function pick($: $, id: string): Promise<void> {
-  await update($, selected, () => id)
+async function closeAside($: $): Promise<void> {
+  await update($, aside, () => null)
 }
 
-/** Puts a draft in the person's prompt box, after what they already typed; never sends it. */
-async function draft($: $, text: string): Promise<void> {
-  const box = await $.prompt.read()
-  const hasDraft = box.text.trim() !== ''
-  const { isFilled } = await $.prompt.fill({ text: hasDraft ? `\n${text}` : text, mode: hasDraft ? 'append' : 'replace' })
-  $.ui.toast(isFilled ? 'Prompt ready in the message box: edit it or press Enter.' : 'Could not reach the message box.')
+/** The app's own dialog. Closing it without a pick is an answer too: nothing to do. */
+async function ask($: $, question: string, header: string, options: string[]): Promise<string | undefined> {
+  return $.ui.ask(question, { header, options }).catch(() => undefined)
+}
+
+/**
+ * Work goes to this session, where it happens; questions get a side answer in the
+ * pane over a fork of the conversation, so they never land in the chat (like /btw).
+ */
+async function act($: $, option: MenuOption, title: string): Promise<void> {
+  if (option.kind === 'mark') {
+    const s = (await read($, trail))?.steps.find(x => x.title === title)
+    if (s) await markStep($, title, s.status !== 'done')
+    return
+  }
+  if (!option.prompt) return
+  if (option.kind === 'main') {
+    await $.prompt.submit({ text: option.prompt, asUser: true })
+    return
+  }
+  await update($, aside, () => ({ title: `${option.label.replace(/ \(side answer\)$/, '')}: ${title}`, isLoading: true }))
+  const reply = await $.model.fork({ prompt: option.prompt, effort: 'low' })
+  const text = reply.isAnswered ? reply.text : `No answer (${reply.reason}).`
+  await update($, aside, cur => (cur ? { ...cur, text, isLoading: false } : cur))
 }
 
 /** A fork has its parent's conversation but no saved plan: rebuild the plan from that conversation. */
@@ -306,6 +355,14 @@ export const register: Register = on => {
   on('command.run', { command: 'wayfinder' }, async $ => {
     await $.ui.open({ id: PANE, title: 'Wayfinder' })
     return { text: 'Wayfinder pane opened.' }
+  })
+
+  // A click on the graph, from the layer over it. The data came from code: check its shape.
+  on('ui.message', async ($, e, next) => {
+    const done = await next(e)
+    const id = (e.data as { id?: unknown } | null)?.id
+    if (typeof id === 'string' && id.length < 300) void openRow($, id)
+    return done
   })
 
   on('tool.call', { tool: PROGRESS_TOOL }, async ($, e) => {
@@ -365,14 +422,15 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const els = $.ui.resolve(e)
-    const { Box, Text, Button, Select } = els
+    const { Box, Text, Button } = els
     // Desktop, editor and mobile draw Svg; the terminal gets the lanes in characters.
     const Svg = e.surface !== 'terminal' && 'Svg' in els ? els.Svg : undefined
+    const Client = 'Client' in els ? els.Client : undefined
     const t = await read($, trail)
     const lives = await read($, repos)
     const rest = await read($, others)
     const open = await read($, expanded)
-    const picked = await read($, selected)
+    const side = await read($, aside)
     const now = await $.clock.now()
     if (!t) return <Text dimColor>Starting…</Text>
 
@@ -388,21 +446,41 @@ export const register: Register = on => {
     const cur = currentStep(t.steps)
     const showOthers = open[OTHERS_KEY] ?? false
 
-    // The card shows the picked step, else the current one.
-    const card = t.steps.find(s => `step:${s.title}` === picked) ?? cur
-
     const graphOf = (r: RepoLive) => {
       const view: GraphView = { trail: t, repo: r, isPrimary: r.root === primary, expanded: open, now, ownerOf }
       if (Svg) {
-        const drawn = graphSvg(view)
-        return <Svg source={drawn.source} alt={`Branch graph of ${r.name}: ${t.steps.map((s, i) => `${i + 1}. ${s.title} (${s.status})`).join(', ') || 'commits'}`} width={drawn.width} height={drawn.height} isInteractive />
+        const drawn = graphSvg(view, drawnRows.get(r.root))
+        drawnRows.set(r.root, new Set(drawn.ids))
+        const alt = `Branch graph of ${r.name}: ${t.steps.map((s, i) => `${i + 1}. ${s.title} (${s.status})`).join(', ') || 'commits'}`
+        // The drawing can't take clicks: a transparent layer of the same size over it does.
+        return (
+          <Box position="relative">
+            <Svg source={drawn.source} alt={alt} width={drawn.width} height={drawn.height} isInteractive />
+            {Client && (
+              <Box position="absolute" top={0} left={0} width="100%" height="100%">
+                <Client key={`clicks-${r.name}`} module="./overlay.ts" props={{ height: drawn.height, hits: drawn.hits }} width="100%" height="100%" />
+              </Box>
+            )}
+          </Box>
+        )
       }
-      return graphText(view).map(line => (
-        <Text mono color={line.color} dimColor={line.dim}>{line.text}</Text>
-      ))
+      // The terminal: each line that names a step, phase or commit is a button.
+      return graphText(view).map((line, i) => {
+        const text = (
+          <Text mono color={line.color} dimColor={line.dim}>
+            {line.text}
+          </Text>
+        )
+        const id = line.id
+        return id ? (
+          <Button key={`line-${r.name}-${i}`} plain onPress={() => void openRow($, id)}>
+            {text}
+          </Button>
+        ) : (
+          text
+        )
+      })
     }
-    const hasFolded = t.phases.some(p => phaseState(t.steps.filter(s => s.phase === p)) === 'done')
-    const showAll = open[SHOW_ALL] === true
 
     return (
       <Box flexDirection="column" gap={1} padding={1}>
@@ -442,6 +520,21 @@ export const register: Register = on => {
           )}
         </Box>
 
+        {side && (
+          <Box flexDirection="column" borderStyle="round" paddingX={1}>
+            <Text weight="semibold">
+              {side.title}
+              <Text dimColor weight="regular"> · side answer, not in the chat</Text>
+            </Text>
+            <Text dimColor={side.isLoading}>{side.isLoading ? 'Thinking…' : side.text}</Text>
+            {!side.isLoading && (
+              <Box flexDirection="row">
+                <Button key="aside-close" plain dimColor label="Close" onPress={() => void closeAside($)} />
+              </Box>
+            )}
+          </Box>
+        )}
+
         {lives.length === 0 && <Text dimColor>No git repo touched yet.</Text>}
         {lives.map(r => (
           <Box flexDirection="column">
@@ -458,66 +551,7 @@ export const register: Register = on => {
           </Box>
         ))}
 
-        {(t.steps.length > 0 || hasFolded) && (
-          <Box flexDirection="row" gap={1} alignItems="center" flexWrap="wrap">
-            {t.steps.length > 0 && (
-              <Select
-                key="step-pick"
-                label="Step"
-                value={card ? `step:${card.title}` : undefined}
-                options={t.steps.map((s, i) => ({ value: `step:${s.title}`, label: `${i + 1}. ${s.title}${s === cur ? ' (current)' : ''}` }))}
-                onSelect={value => void pick($, value)}
-              />
-            )}
-            {hasFolded && <Button key="show-all" plain dimColor label={showAll ? 'Fold finished phases' : 'Show finished phases'} onPress={() => void togglePhase($, SHOW_ALL, showAll)} />}
-          </Box>
-        )}
-
-        {card && (
-          <Box flexDirection="column" borderStyle="round" borderColor={card === cur ? 'suggestion' : undefined} paddingX={1}>
-            <Text weight="semibold">
-              {t.steps.indexOf(card) + 1}. {card.title}
-              <Text dimColor weight="regular">
-                {' '}· {card.status}
-                {card.phase ? ` · ${card.phase}` : ''}
-                {card.branch ? ` · on ${card.branch}` : ''}
-                {card.doneAt ? ` · ${card.status === 'dropped' ? 'dropped' : 'done'} ${ago(now - card.doneAt)}` : card.startedAt ? ` · started ${ago(now - card.startedAt)}` : ''}
-              </Text>
-            </Text>
-            {card.note && <Text>{card.note}</Text>}
-            {card.waitingOn && card.status !== 'done' && card.status !== 'dropped' && (
-              <Text color={card.waitingOn === 'you' ? 'warning' : undefined}>
-                Waiting on {card.waitingOn}
-                {card.waitingFor ? `: ${card.waitingFor}` : ''}
-              </Text>
-            )}
-            {card.addedLate && <Text color="warning">Not in the first plan: {card.reason ?? 'no reason given'}</Text>}
-            {card.status === 'dropped' && <Text color="warning">Dropped: {card.reason ?? 'no reason given'}</Text>}
-            {card.outOfOrder && <Text color="warning">Done before earlier steps</Text>}
-            {isStuck(t, card) && <Text color="warning">Current for {t.turn - (card.startedTurn ?? t.turn)} turns</Text>}
-            {card.files.length > 0 && <Text dimColor>Files: {card.files.map(baseName).join(', ')}</Text>}
-            {t.decisions
-              .filter(d => d.step === card.title)
-              .map(d => (
-                <Text dimColor>
-                  ◇ {d.text}
-                  {d.why ? ` (${d.why})` : ''}
-                </Text>
-              ))}
-            {t.events
-              .filter(ev => ev.kind === 'commit' && ev.step === card.title)
-              .map(ev => (
-                <Text dimColor mono>{ev.text}</Text>
-              ))}
-            <Box flexDirection="row" gap={1}>
-              <Button key="card-action" label={stepAction(t, card).label} onPress={() => void draft($, stepAction(t, card).prompt)} />
-              {card.status !== 'dropped' && (
-                <Button key="card-mark" plain dimColor label={card.status === 'done' ? 'Mark not done' : 'Mark done'} onPress={() => void markStep($, card.title, card.status !== 'done')} />
-              )}
-              {picked !== null && <Button key="card-close" plain dimColor label="Close" onPress={() => void select($, null)} />}
-            </Box>
-          </Box>
-        )}
+        {t.steps.length > 0 && <Text dimColor>Click a step for its details and actions, a phase to fold it.</Text>}
 
         {t.unplannedFiles.length > 0 && (
           <Text color="warning">

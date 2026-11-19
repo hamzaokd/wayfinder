@@ -9,6 +9,8 @@ export type Step = {
   waitingOn?: 'you' | 'claude'
   /** What exactly it waits for: "run the benchmark on staging". */
   waitingFor?: string
+  /** What the step is for, in a sentence: shown when the step is clicked. */
+  detail?: string
   /** Added after the first plan: off plan. */
   addedLate?: boolean
   /** Why it was added or dropped. */
@@ -110,7 +112,7 @@ declare module 'claude-code' {
       repos: Shaped<RepoLive[]>
       others: Shaped<Trail[]>
       expanded: Shaped<Record<string, boolean>>
-      selected: Shaped<string | null>
+      aside: Shaped<{ title: string; text?: string; isLoading: boolean } | null>
     }
   }
 }

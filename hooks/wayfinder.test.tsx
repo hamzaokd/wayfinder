@@ -3,8 +3,8 @@ import { expect, mock, test } from 'claude-code/testing'
 
 import type { RepoLive } from '../types'
 import { GIT } from './gitgraph'
-import { graphSvg, graphText, items, SHOW_ALL } from './graph'
-import { applyPlan, attributeEdits, dirsFromToolUse, emptyTrail, normPath, PROGRESS_TOOL, quoted, rebuildFromHistory, sinceYouLeft, stepAction, waitingOnYou } from './lib'
+import { graphSvg, graphText, items } from './graph'
+import { applyPlan, attributeEdits, dirsFromToolUse, emptyTrail, normPath, PROGRESS_TOOL, quoted, rebuildFromHistory, sinceYouLeft, stepMenu, waitingOnYou } from './lib'
 
 const PANE = {
   plugin: 'wayfinder',
@@ -138,8 +138,17 @@ test('the graph puts steps on their branch, folds finished phases, and plans the
     'step:PR@1',
     'merge',
   ])
-  const { source } = graphSvg(view)
-  expect(source).toContain('Investigate<tspan class="phase-sub"> · 1 step done · 1 commit')
+  const { source, hits, ids } = graphSvg(view)
+  expect(source).toContain('▸ Investigate<tspan class="phase-sub"> · 1 step done · 1 commit')
+  expect(source).toContain('▾ Build<tspan')
+  // Every step, phase and labelled commit row is a click target (the folded phase's commit is a bare dot);
+  // nothing animates on a first draw.
+  expect(hits.map(h => h.id)).toEqual(['phase:Investigate', 'phase:Build', 'step:Writer', 'commit:' + H('b'), 'commit:' + H('l'), 'commit:' + H('m'), 'phase:Ship', 'step:PR'])
+  expect(source).not.toContain('class="enter"')
+  // Drawn again with a step that wasn't there: it eases in, the rows below slide down.
+  const again = graphSvg({ ...view, trail: { ...t, steps: [...t.steps, { ...t.steps[2]!, title: 'Docs' }] } }, new Set(ids)).source
+  expect(again.match(/class="enter"/g)?.length).toBe(1)
+  expect(again).toMatch(/class="slide" style="--dy:-\d+px"/)
   expect(source).toContain('2. Writer · you are here')
   expect(source).toContain('fix/login · also edits auth.ts')
   expect(source).toContain('Merge into main (planned)')
@@ -148,18 +157,22 @@ test('the graph puts steps on their branch, folds finished phases, and plans the
   expect(source).toContain('<title>2. Writer (doing) · Build · on feature/x')
   expect(graphText(view).some(l => l.text.includes('◉ 2. Writer · you are here'))).toBe(true)
 
-  const opened = items({ ...view, expanded: { [SHOW_ALL]: true } }).list.map(name)
-  expect(opened).toContain('step:Check perms@1')
+  // A click folds or unfolds one phase.
+  expect(items({ ...view, expanded: { Investigate: true } }).list.map(name)).toContain('step:Check perms@1')
+  expect(items({ ...view, expanded: { Build: false } }).list.map(name)).not.toContain('step:Writer@1')
 })
 
-test('each step offers the one prompt worth sending', () => {
-  const t = applyPlan(emptyTrail('s1', 0), { phases: plan([['P', 'A', 'done'], ['P', 'B', 'doing'], ['P', 'C', 'todo'], ['P', 'D', 'todo']]) }, ctx(1))
+test('a click on a step offers what fits it: work goes to the session, questions to a side answer', () => {
+  const t = applyPlan(emptyTrail('s1', 0), { phases: [{ title: 'P', steps: [{ title: 'A', status: 'done' }, { title: 'B', status: 'doing', detail: 'stream rows to keep memory flat' }, { title: 'C', status: 'todo' }, { title: 'D', status: 'todo' }] }] }, ctx(1))
   const [a, b, , d] = t.steps
-  expect(stepAction(t, a!).label).toBe('Recap')
-  expect(stepAction(t, b!).prompt).toBe('Finish step 2 "B", then stop and tell me where we are. Update the Wayfinder plan as you go.')
-  expect(stepAction(t, d!).prompt).toBe('Work through the plan up to step 4 "D" (steps 2 to 4), then stop there and tell me where we are. Update the Wayfinder plan as you go.')
+  const labels = (s: (typeof t.steps)[number]) => stepMenu(t, s, 10).options.map(o => `${o.kind}:${o.label}`)
+  expect(labels(a!)).toEqual(['side:Recap it (side answer)', 'mark:Mark not done'])
+  expect(labels(b!)).toEqual(['main:Continue this step', 'side:Explain it (side answer)', 'mark:Mark done'])
+  const menu = stepMenu(t, d!, 10)
+  expect(menu.options[0]!.prompt).toBe('Work through the plan up to step 4 "D" (steps 2 to 4), then stop there and tell me where we are. Update the Wayfinder plan as you go.')
+  expect(stepMenu(t, b!, 10).question).toContain('stream rows to keep memory flat')
   const w = applyPlan(emptyTrail('s2', 0), { phases: [{ title: 'P', steps: [{ title: 'Bench', status: 'doing', waitingOn: 'you', waitingFor: 'run on staging' }] }] }, ctx(1))
-  expect(stepAction(w, w.steps[0]!)).toEqual({ label: 'I did it', prompt: 'Done on my side: run on staging. Continue with step 1 "Bench".' })
+  expect(stepMenu(w, w.steps[0]!, 10).options[0]).toEqual({ label: 'I did my part', kind: 'main', prompt: 'Done on my side: run on staging. Continue with step 1 "Bench".' })
 })
 
 // A fake repo at C:/r on feature/x, one commit ahead of main. `head` moves when the test commits "outside".
@@ -189,7 +202,7 @@ function fakeGit(on: On, repo: { head: string; log: string }) {
   })
 }
 
-test('the pane: the graph, the step picker, the details card, and a drafted prompt', async ($, on) => {
+test('the pane: the graph, clicks on it, the dialog, and where actions go', async ($, on) => {
   const repo = { head: H('a'), log: '' }
   mock.store(on)
   const clock = mock.clock(on, { now: 1_000_000 })
@@ -199,18 +212,26 @@ test('the pane: the graph, the step picker, the details card, and a drafted prom
   on('command.register', () => ({ value: { command: 'wayfinder' } }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('ui.status', () => ({ value: undefined }))
-  on('ui.toast', () => ({ value: undefined }))
-  on('prompt.read', () => ({ value: { text: '', cursor: 0 } }))
-  let drafted = ''
-  on('prompt.fill', (_, e) => {
-    drafted = e.text
-    return { isFilled: true }
-  })
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   let seenContext: readonly string[] = []
+  let sent = ''
   on('prompt.submit', (_, e) => {
     seenContext = e.context ?? []
+    sent = e.text
     return { text: e.text, context: e.context }
+  })
+  // The person answers the step's dialog with `answer`.
+  let answer = ''
+  let asked = ''
+  on('tool.call', { tool: 'AskUserQuestion' }, (_, e) => {
+    const q = (e as unknown as { questions: { question: string }[] }).questions[0]!.question
+    asked = q
+    return { result: { questions: [], answers: { [q]: answer } } } as never
+  })
+  let forked = ''
+  on('model.fork', (_, e) => {
+    forked = e.prompt
+    return { value: { isAnswered: true, text: 'It streams rows to stay under 200 MB.' } } as never
   })
 
   await $.session.start({ cwd: 'C:/r', surface: 'desktop', isInteractive: true })
@@ -241,29 +262,48 @@ test('the pane: the graph, the step picker, the details card, and a drafted prom
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ ...PANE, surface })
     expect((await ui.find({ type: 'Text', text: /^Add CSV export$/ }))?.text).toBe('Add CSV export')
-    // The waiting card and the details card name the step; the graph draws it.
+    // The waiting card names the step; the graph draws it.
     expect(await ui.find({ type: 'Text', text: /This session: Benchmark on 1M rows: run it on staging/ })).toBeTruthy()
-    expect(await ui.find({ type: 'Text', text: /^Waiting on you: run it on staging$/ })).toBeTruthy()
     const graph = async () => (surface === 'terminal' ? (await ui.findAll({ type: 'Text' })).map(x => x.text).join('\n') : String((await ui.find({ type: 'Svg' }))?.props.source))
     expect(await graph()).toContain('2. Benchmark on 1M rows · you are here')
     expect(await graph()).toContain('bbbbbbb add writer')
 
-    // The finished phase is folded into one row until "show finished phases".
+    // A click on a row: the terminal's lines are buttons; on desktop a layer over the drawing maps the click to a row.
+    const click = async (id: string) => {
+      if (surface === 'terminal') {
+        const lines = await ui.findAll({ type: 'Button' })
+        const line = lines.find(b => b.text.includes(id.replace(/^(step|phase):/, '')))
+        await ui.press({ key: line!.key! })
+        return
+      }
+      const layer = await ui.find({ type: 'Client' })
+      const { height, hits } = layer!.props.props as { height: number; hits: { y1: number; y2: number; id: string }[] }
+      const hit = hits.find(h => h.id === id)!
+      await ui.resize({ columns: 60, rows: height, in: 'clicks-r' })
+      await ui.pointer({ type: 'down', x: 5, y: Math.floor((hit.y1 + hit.y2) / 2), button: 'left', in: 'clicks-r' })
+    }
+
+    // The finished phase is folded into one row; a click on it opens it, another folds it.
     expect(await graph()).not.toContain('1. Check S3 permissions')
-    await ui.press({ key: 'show-all' })
+    await click('phase:Investigate')
     expect(await graph()).toContain('1. Check S3 permissions')
-    await ui.press({ key: 'show-all' })
+    await click('phase:Investigate')
+    expect(await graph()).not.toContain('1. Check S3 permissions')
 
-    // The card's action drafts a prompt; it never sends one.
-    await ui.press({ key: 'card-action' })
-    expect(drafted).toBe('Done on my side: run it on staging. Continue with step 2 "Benchmark on 1M rows".')
+    // A click on a step opens the dialog; work is sent to this session.
+    answer = 'Work up to here'
+    await click('step:Open PR')
+    expect(asked).toContain('3. Open PR (todo, not started)')
+    expect(sent).toBe('Work through the plan up to step 3 "Open PR" (steps 2 to 3), then stop there and tell me where we are. Update the Wayfinder plan as you go.')
 
-    // Picking another step shows its card and its own action.
-    await ui.select({ key: 'step-pick', value: 'step:Open PR' })
-    expect((await ui.find({ type: 'Button', key: 'card-action' }))?.props.label).toBe('▶ Work up to here')
-    await ui.press({ key: 'card-action' })
-    expect(drafted).toBe('Work through the plan up to step 3 "Open PR" (steps 2 to 3), then stop there and tell me where we are. Update the Wayfinder plan as you go.')
-    await ui.press({ key: 'card-close' })
+    // A question gets a side answer in the pane, never a message in the chat.
+    sent = ''
+    answer = 'Explain it (side answer)'
+    await click('step:Open PR')
+    expect(sent).toBe('')
+    expect(forked).toContain('what does step 3 "Open PR" involve')
+    expect(await ui.find({ type: 'Text', text: /It streams rows to stay under 200 MB\./ })).toBeTruthy()
+    await ui.press({ key: 'aside-close' })
     await ui.unmount()
   }
 })
