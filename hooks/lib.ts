@@ -354,7 +354,8 @@ export type MenuOption = { label: string; kind: 'main' | 'side' | 'mark'; prompt
 
 export function stepMenu(trail: Trail, s: Step, now: number): { header: string; question: string; options: MenuOption[] } {
   const n = trail.steps.indexOf(s) + 1
-  const name = `step ${n} "${s.title}"`
+  // Step text was written by Claude: inside a prompt it stays one quoted line, never loose instructions.
+  const name = `step ${n} ${quoted(s.title)}`
   const isOpen = s.status !== 'done' && s.status !== 'dropped'
   const when = s.doneAt ? `${s.status === 'dropped' ? 'dropped' : 'done'} ${ago(now - s.doneAt)}` : s.startedAt ? `started ${ago(now - s.startedAt)}` : 'not started'
   const lines = [
@@ -372,12 +373,12 @@ export function stepMenu(trail: Trail, s: Step, now: number): { header: string; 
     options.push({ label: 'Recap it (side answer)', kind: 'side', prompt: `In a few lines, recap ${name}: what changed, what we decided, and anything left open.` })
     options.push({ label: 'Mark not done', kind: 'mark' })
   } else if (s.status === 'dropped') {
-    options.push({ label: 'Bring it back', kind: 'main', prompt: `Bring back ${name} (dropped: ${s.reason ?? 'no reason given'}). Put it back in the plan and say where it fits.` })
+    options.push({ label: 'Bring it back', kind: 'main', prompt: `Bring back ${name} (dropped: ${quoted(s.reason ?? 'no reason given')}). Put it back in the plan and say where it fits.` })
     options.push({ label: 'Why dropped? (side answer)', kind: 'side', prompt: `In a few lines: why was ${name} dropped, and does anything still depend on it?` })
   } else {
     const open = trail.steps.filter(x => x.status !== 'done' && x.status !== 'dropped')
     const first = open[0]
-    if (s.waitingOn === 'you') options.push({ label: 'I did my part', kind: 'main', prompt: `Done on my side: ${s.waitingFor ?? s.title}. Continue with ${name}.` })
+    if (s.waitingOn === 'you') options.push({ label: 'I did my part', kind: 'main', prompt: `Done on my side: ${quoted(s.waitingFor ?? s.title)}. Continue with ${name}.` })
     else if (s.status === 'doing' || first === s) options.push({ label: 'Continue this step', kind: 'main', prompt: `Finish ${name}, then stop and tell me where we are. Update the Wayfinder plan as you go.` })
     else {
       const from = first ? trail.steps.indexOf(first) + 1 : n

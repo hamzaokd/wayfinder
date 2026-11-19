@@ -284,6 +284,14 @@ async function openRow($: $, id: string): Promise<void> {
   }
 }
 
+/** Puts a draft in the person's message box, after what they already typed; never sends it. */
+async function draft($: $, text: string): Promise<void> {
+  const box = await $.prompt.read()
+  const hasDraft = box.text.trim() !== ''
+  const { isFilled } = await $.prompt.fill({ text: hasDraft ? `\n${text}` : text, mode: hasDraft ? 'append' : 'replace' })
+  $.ui.toast(isFilled ? 'Ready in the message box: read it, then press Enter to send.' : 'Could not reach the message box.')
+}
+
 async function closeAside($: $): Promise<void> {
   await update($, aside, () => null)
 }
@@ -305,7 +313,9 @@ async function act($: $, option: MenuOption, title: string): Promise<void> {
   }
   if (!option.prompt) return
   if (option.kind === 'main') {
-    await $.prompt.submit({ text: option.prompt, asUser: true })
+    // A draft, never a send: the prompt quotes step text Claude wrote, so the person
+    // reads it and sends it as their own, or doesn't.
+    await draft($, option.prompt)
     return
   }
   await update($, aside, () => ({ title: `${option.label.replace(/ \(side answer\)$/, '')}: ${title}`, isLoading: true }))
