@@ -43,6 +43,15 @@ const aside = atom({ plugin: 'wayfinder', key: 'aside' } as const, null, { shape
 const OTHERS_KEY = '__others'
 // Row ids each repo's graph drew last time: what is new on the next draw animates in.
 const drawnRows = new Map<string, Set<string>>()
+// The last diagnostics, newest last. Saved with the session on each refresh, so a reload keeps them.
+const diag: string[] = []
+const DIAG_KEY = 'diag:'
+function note(line: string): void {
+  // Same line again (a redraw): keep one.
+  if (diag.at(-1)?.endsWith(line)) return
+  diag.push(`${new Date().toISOString().slice(11, 19)} ${line}`)
+  if (diag.length > 40) diag.shift()
+}
 
 const DESCRIPTION = `Records this session's plan so the user can see where the work stands in the Wayfinder pane beside the chat: a branch graph with the plan's phases and steps on it.
 
@@ -218,6 +227,7 @@ async function tick($: $): Promise<void> {
   try {
     await refreshOthers($)
     await sync($, isInTurn ? 'session' : 'outside')
+    await $.store.set(DIAG_KEY + sessionId, diag)
     $.ui.status(undefined)
   } catch (err) {
     $.ui.status(`wayfinder: refresh failed: ${String(err).slice(0, 80)}`)
@@ -256,6 +266,7 @@ async function togglePhase($: $, title: string, isOpen: boolean): Promise<void> 
 
 /** What a click on a row of the graph does: fold a phase, or open a step's or a commit's dialog. */
 async function openRow($: $, id: string): Promise<void> {
+  note(`open ${id}`)
   const t = await read($, trail)
   if (!t) return
   if (id.startsWith('phase:')) {
@@ -296,9 +307,12 @@ async function closeAside($: $): Promise<void> {
   await update($, aside, () => null)
 }
 
-/** The app's own dialog. Closing it without a pick is an answer too: nothing to do. */
+/** The app's own dialog. It rejects when closed without a pick, but also on real failures: those are logged. */
 async function ask($: $, question: string, header: string, options: string[]): Promise<string | undefined> {
-  return $.ui.ask(question, { header, options }).catch(() => undefined)
+  return $.ui.ask(question, { header, options }).then(
+    answer => (note(`dialog answered: ${answer}`), answer),
+    err => (note(`dialog closed or failed: ${String(err).slice(0, 200)}`), undefined),
+  )
 }
 
 /**
@@ -344,10 +358,14 @@ export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     const started = await next(e)
     sessionId = await $.session.id()
+    const kept = await $.store.get(DIAG_KEY + sessionId)
+    if (Array.isArray(kept) && diag.length === 0) diag.push(...kept.filter((l): l is string => typeof l === 'string').slice(-40))
+    note('reloaded')
     const now = await $.clock.now()
     const stored = (await $.store.get(PREFIX + sessionId)) as Trail | undefined
     await update($, trail, () => stored ?? emptyTrail(sessionId, now))
     await $.tool.register({ name: 'progress', description: DESCRIPTION, inputSchema: INPUT_SCHEMA, isDeferred: false })
+    await $.tool.register({ name: 'debug', description: "Returns Wayfinder's recent diagnostics: what the pane drew, clicks on the graph and how they were handled. Read-only.", isDeferred: true })
     await $.command.register({ name: 'wayfinder', description: 'Open the Wayfinder pane: plan, branch graph and what waits on you' })
     void $.ui.open({ id: PANE, title: 'Wayfinder' })
     const cwd = normPath(e.cwd)
@@ -370,10 +388,22 @@ export const register: Register = on => {
   // A click on the graph, from the layer over it. The data came from code: check its shape.
   on('ui.message', async ($, e, next) => {
     const done = await next(e)
-    const id = (e.data as { id?: unknown } | null)?.id
-    if (typeof id === 'string' && id.length < 300) void openRow($, id)
+    const data = e.data as { id?: unknown; probe?: unknown } | null
+    note(`click from ${e.surface} ${e.element}: id=${String(data?.id)} probe=${JSON.stringify(data?.probe ?? null).slice(0, 200)}`)
+    const id = data?.id
+    if (typeof id === 'string' && id.length < 300) void openRow($, id).catch(err => note(`openRow failed: ${String(err).slice(0, 200)}`))
     return done
   })
+
+  // The click layer failed to load or draw: say so, the graph still shows.
+  on('ui.fault', async ($, e, next) => {
+    note(`click layer fault: ${JSON.stringify(e).slice(0, 300)}`)
+    $.ui.status('wayfinder: the click layer failed; see mcp__wayfinder__debug')
+    return next(e)
+  })
+
+  // Read-only: what the diagnostics recorded, for finding where a click is lost.
+  on('tool.call', { tool: 'mcp__wayfinder__debug' }, async () => ({ result: diag.length ? diag.join('\n') : 'nothing recorded yet' }))
 
   on('tool.call', { tool: PROGRESS_TOOL }, async ($, e) => {
     const ctx = await planCtx($)
@@ -461,11 +491,13 @@ export const register: Register = on => {
       if (Svg) {
         const drawn = graphSvg(view, drawnRows.get(r.root))
         drawnRows.set(r.root, new Set(drawn.ids))
+        note(`drew ${r.name} on ${e.surface}: ${drawn.width}x${drawn.height}px, ${drawn.hits.length} click targets, layer ${Client ? 'on' : 'missing'}`)
         const alt = `Branch graph of ${r.name}: ${t.steps.map((s, i) => `${i + 1}. ${s.title} (${s.status})`).join(', ') || 'commits'}`
         // The drawing can't take clicks: a transparent layer of the same size over it does.
+        // A plain image, not `isInteractive`: that draws in a frame of its own, which keeps the clicks for itself.
         return (
           <Box position="relative">
-            <Svg source={drawn.source} alt={alt} width={drawn.width} height={drawn.height} isInteractive />
+            <Svg source={drawn.source} alt={alt} width={drawn.width} height={drawn.height} />
             {Client && (
               <Box position="absolute" top={0} left={0} width="100%" height="100%">
                 <Client key={`clicks-${r.name}`} module="./overlay.ts" props={{ height: drawn.height, hits: drawn.hits }} width="100%" height="100%" />
