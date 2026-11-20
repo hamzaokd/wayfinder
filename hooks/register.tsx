@@ -612,12 +612,24 @@ export const register: Register = on => {
         )}
 
         <Box flexDirection="column">
+          {/* Each line says what it is: the goal, where the work stands, and whether the plan is behind. */}
+          {t.goal && (
+            <Text size="caption" dimColor weight="semibold">
+              GOAL
+            </Text>
+          )}
           <Text size="heading" weight="semibold">{t.goal ?? 'No plan yet'}</Text>
-          {t.whereWasI && <Text dimColor>{t.whereWasI}</Text>}
+          {t.whereWasI && (
+            <Text dimColor>
+              <Text weight="semibold">Where we are: </Text>
+              {t.whereWasI}
+            </Text>
+          )}
           {!t.goal && <Text dimColor>Claude records the plan here once the work has several steps.</Text>}
           {isStale && (
             <Text color="warning">
-              Plan last updated {since} turn(s) ago{t.commitsSincePlan ? `, ${t.commitsSincePlan} commit(s) since` : ''}.
+              <Text weight="semibold">Plan is behind: </Text>
+              last updated {since} turn(s) ago{t.commitsSincePlan ? `, ${t.commitsSincePlan} commit(s) since` : ''}.
             </Text>
           )}
         </Box>

@@ -36,6 +36,7 @@ function textStyle(el, p) {
   if (p.strikethrough) el.style.textDecoration = 'line-through';
   if (p.underline) el.style.textDecoration = 'underline';
   if (p.size === 'heading') el.style.fontSize = '16px';
+  if (p.size === 'caption') { el.style.fontSize = '10px'; el.style.letterSpacing = '.08em'; }
   if (p.wrap && p.wrap.startsWith('truncate')) el.classList.add('truncate');
 }
 function render(n, hoverScope) {
