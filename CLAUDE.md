@@ -7,7 +7,7 @@ graph. User-facing docs: README.md. API types: `.claude-plugin/types/claude-code
 ## Layout
 
 - `hooks/register.tsx`: the hooks. Session start, the 15 s tick, commands, the progress tool,
-  prompt notes to Claude, transcript scan at turn end, and the pane (`ui.render`).
+  prompt notes to Claude, transcript scan at turn end, the pane (`ui.render`), and the status strip above the prompt (`AbovePrompt`, colors from `chatStatus` in lib.ts).
 - `hooks/graph.ts`: timeline rows and lane drawing (Svg slices), legend, terminal text version.
 - `hooks/lib.ts`: pure logic (plan updates, edits per step, waiting/away, step dialog, shared files).
 - `hooks/i18n.ts`: every string the person sees, EN and FR (FR typed as `typeof EN`). Notes to

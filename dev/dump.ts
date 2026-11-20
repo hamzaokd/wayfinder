@@ -17,8 +17,8 @@ export function captureDialogs(on: any): { last?: Dialog } {
 
 const MAX_PHASES = 5
 
-/** Prints one PREVIEW line: the pane's tree for each set of folded-or-unfolded phases, and each step's dialog. */
-export async function dump(ui: any, dialogs: { last?: Dialog }): Promise<void> {
+/** Prints one PREVIEW line: the pane's tree for each set of folded-or-unfolded phases, each step's dialog, and the band above the prompt. */
+export async function dump(ui: any, dialogs: { last?: Dialog }, $: any): Promise<void> {
   const keys = async () => (await ui.findAll({ type: 'Button' })).map((b: any) => String(b.key ?? ''))
   const phases: string[] = (await keys()).filter((k: string) => k.includes('-phase:')).slice(0, MAX_PHASES)
   const trees: Record<string, unknown> = {}
@@ -41,5 +41,8 @@ export async function dump(ui: any, dialogs: { last?: Dialog }): Promise<void> {
     trees[k] = await ui.find({ type: 'Box' })
     await ui.press({ key: k })
   }
-  console.log('PREVIEW ' + JSON.stringify({ trees, asks }))
+  const bandUi = await $.ui.mount({ plugin: 'wayfinder', component: 'AbovePrompt', requestId: 'band', surface: 'desktop', props: { hasSurvey: false, isCollapsed: false, isWorking: true, maxRows: 10, bodyColumns: 80, scroll: { offset: 0, bodyRows: 10 }, view: {} } }).catch(() => undefined)
+  const band = bandUi ? await bandUi.find({ type: 'Box' }) : null
+  await bandUi?.unmount()
+  console.log('PREVIEW ' + JSON.stringify({ trees, asks, band }))
 }

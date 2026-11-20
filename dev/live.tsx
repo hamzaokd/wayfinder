@@ -38,6 +38,6 @@ test('live preview', { options: { autoStart: /*AUTOSTART*/ true } }, async ($, o
   for (let i = 0; i < 5; i++) await new Promise(r => setTimeout(r, 50))
   console.log('ASKED ' + JSON.stringify(asked))
   const ui = await $.ui.mount({ plugin: 'wayfinder', component: 'Pane', requestId: 'wayfinder', surface: 'desktop', props: { title: 'Wayfinder', isFocused: false, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 60 }, view: {} } })
-  await dump(ui, dialogs)
+  await dump(ui, dialogs, $)
   await ui.unmount()
 })

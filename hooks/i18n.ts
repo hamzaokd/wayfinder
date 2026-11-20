@@ -20,6 +20,8 @@ const EN = {
   commits: (k: number) => n(k, 'commit', 'commits'),
   tagDropped: 'dropped',
   tagNotInPlan: 'not in plan',
+  // The strip above the prompt, by chatStatus kind.
+  chatStatus: { blocked: 'Blocked', waiting: 'Waiting on you', stuck: 'Stuck', achieved: 'Goal reached', offPlan: 'Off plan', doing: 'Working on' },
   tagWaiting: 'waiting on you',
   tagStuck: (turns: number) => `stuck ${turns} turns`,
   tagHere: 'you are here',
@@ -170,6 +172,7 @@ const FR: typeof EN = {
   commits: k => n(k, 'commit', 'commits'),
   tagDropped: 'abandonnée',
   tagNotInPlan: 'hors plan',
+  chatStatus: { blocked: 'Bloqué', waiting: 'Attend ta réponse', stuck: 'Coincé', achieved: 'Objectif atteint', offPlan: 'Hors plan', doing: 'En cours' },
   tagWaiting: 'attend ta réponse',
   tagStuck: turns => `bloquée depuis ${turns} tours`,
   tagHere: 'tu es ici',

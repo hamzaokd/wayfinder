@@ -4,10 +4,13 @@
 <meta charset="utf-8">
 <title>Wayfinder preview</title>
 <style>
-  :root { --bg: #ffffff; --fg: #1f2328; --dim: #6e7781; --suggestion: #0969da; --success: #1a7f37; --warning: #9a6700; --error: #cf222e; --border: #d0d7de; --inactive: #8c959f; }
-  @media (prefers-color-scheme: dark) { :root { --bg: #1f1e1d; --fg: #e8e6e3; --dim: #9a968f; --suggestion: #4493f8; --success: #3fb950; --warning: #d29922; --error: #f85149; --border: #3d444d; --inactive: #6e7681; } }
+  :root { --bg: #ffffff; --fg: #1f2328; --dim: #6e7781; --suggestion: #0969da; --success: #1a7f37; --warning: #9a6700; --error: #cf222e; --border: #d0d7de; --inactive: #8c959f; --merged: #8250df; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #1f1e1d; --fg: #e8e6e3; --dim: #9a968f; --suggestion: #4493f8; --success: #3fb950; --warning: #d29922; --error: #f85149; --border: #3d444d; --inactive: #6e7681; --merged: #a371f7; } }
   body { margin: 0; background: var(--bg); color: var(--fg); font: 13px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+  body { display: flex; }
   #pane { width: 480px; border-right: 1px dashed var(--border); min-height: 100vh; }
+  #chat { flex: 1; max-width: 720px; display: flex; flex-direction: column; justify-content: flex-end; padding: 16px; }
+  #prompt { border: 1px solid var(--border); border-radius: 10px; padding: 10px; color: var(--dim); margin-top: 8px; }
   .box { display: flex; min-width: 0; }
   .text { white-space: pre-wrap; min-width: 0; }
   .truncate { white-space: pre; overflow: hidden; text-overflow: ellipsis; }
@@ -20,12 +23,13 @@
 </head>
 <body>
 <div id="pane"><div class="note">Preview of the render tree (dev/preview.py). Spacing units drawn as 8px; the app's own painting may differ.</div></div>
+<div id="chat"><div class="note">The band above the prompt (no band: nothing drawn)</div><div id="band"></div><div id="prompt">Message Claude…</div></div>
 <dialog id="dialog"><h3></h3><pre></pre><ul></ul><form method="dialog"><button>Close</button></form></dialog>
 <script>
 const DATA = /*TREE*/null;
 const flipped = new Set();
 const CELL = 8;
-const color = c => (c && ['suggestion', 'success', 'warning', 'error', 'inactive'].includes(c) ? `var(--${c})` : c);
+const color = c => (c && ['suggestion', 'success', 'warning', 'error', 'inactive', 'merged'].includes(c) ? `var(--${c})` : c);
 const scopes = [];
 function textStyle(el, p) {
   if (p.color) el.style.color = color(p.color);
@@ -119,6 +123,7 @@ for (const [scope, target, h] of scopes) {
 }
 }
 draw();
+if (DATA.band) document.getElementById('band').append(render(DATA.band));
 </script>
 </body>
 </html>

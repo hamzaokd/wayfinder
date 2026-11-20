@@ -11,6 +11,7 @@ import {
   applyPlan,
   attributeEdits,
   baseName,
+  chatStatus,
   currentStep,
   dirsFromToolUse,
   emptyTrail,
@@ -27,11 +28,13 @@ import {
   sharedFiles,
   waitingOnYou,
 } from './lib'
-import type { MenuOption, PlanInput, ToolUseLite } from './lib'
+import type { ChatStatus, MenuOption, PlanInput, ToolUseLite } from './lib'
 
 type $ = EngineInterface
 
 const PANE = 'wayfinder'
+// Theme keys, so the strip follows the person's theme.
+const STATUS_COLOR: Record<ChatStatus['kind'], string> = { blocked: 'error', waiting: 'warning', stuck: 'warning', achieved: 'success', offPlan: 'merged', doing: 'suggestion' }
 // Bump the prefix (and the atoms' shapes) when Trail's fields change.
 const PREFIX = 'trail2:'
 const TICK_MS = 15_000
@@ -613,6 +616,25 @@ export const register: Register = (on, opts: PluginOptions) => {
     await sync($, 'session')
     isInTurn = false
     return done
+  })
+
+  // The strip above the prompt: the session's state at a glance, in the main column. Unnamed, the hook hears its own row alone.
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    const t = await read($, trail)
+    const set = await read($, settings)
+    const st = t && !e.props.hasSurvey && isOn(t, set.autoStart) ? chatStatus(t) : undefined
+    if (!st) return next(e)
+    setLang(await read($, langNow))
+    const { Box, Text } = $.ui.resolve(e)
+    const color = STATUS_COLOR[st.kind]
+    return (
+      <Box key="status" flexDirection="row" gap={1} paddingX={1} borderStyle="round" borderColor={color}>
+        <Text color={color} weight="semibold">
+          {T.chatStatus[st.kind]}
+        </Text>
+        {st.detail ? <Text dimColor wrap="truncate">{st.detail}</Text> : null}
+      </Box>
+    )
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {

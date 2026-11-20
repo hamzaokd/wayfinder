@@ -4,7 +4,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { RepoLive } from '../types'
 import { GIT } from './gitgraph'
 import { graphLanes, graphText, items } from './graph'
-import { applyPlan, attributeEdits, dirsFromToolUse, emptyTrail, normPath, PROGRESS_TOOL, quoted, rebuildFromHistory, sharedFiles, sinceYouLeft, stepMenu, waitingOnYou } from './lib'
+import { applyPlan, attributeEdits, chatStatus, dirsFromToolUse, emptyTrail, normPath, PROGRESS_TOOL, quoted, rebuildFromHistory, sharedFiles, sinceYouLeft, stepMenu, waitingOnYou } from './lib'
 import { langOf, setLang } from './i18n'
 
 const PANE = {
@@ -19,6 +19,13 @@ const PANE = {
     scroll: { offset: 0, bodyRows: 60 },
     view: {},
   },
+} as const
+
+const BAND = {
+  plugin: 'wayfinder',
+  component: 'AbovePrompt',
+  requestId: 'band',
+  props: { hasSurvey: false, isCollapsed: false, isWorking: false, maxRows: 10, bodyColumns: 80, scroll: { offset: 0, bodyRows: 10 }, view: {} },
 } as const
 
 const ctx = (now: number) => ({ now, repo: 'C:/r', branch: 'feature/x' })
@@ -454,6 +461,24 @@ test('a decision whose step left the plan joins the next phase, under its header
   expect(open[1]!.phase).toBe('Earlier')
 })
 
+test('the strip above the prompt: most pressing state first, off plan when the plan drifts', () => {
+  expect(chatStatus(emptyTrail('s1', 0))).toBeUndefined()
+  let t = applyPlan(emptyTrail('s1', 0), { goal: 'G', phases: plan([['P', 'A', 'doing'], ['P', 'B', 'todo']]) }, ctx(1))
+  expect(chatStatus(t)).toEqual({ kind: 'doing', detail: 'A' })
+  // A step added after the first plan drifts: off plan for this turn, then still while that step is current.
+  t = applyPlan(t, { phases: plan([['P', 'A', 'done'], ['P', 'X', 'doing'], ['P', 'B', 'todo']]), change: { reason: 'found a bug' } }, ctx(2))
+  expect(chatStatus(t)?.kind).toBe('offPlan')
+  t = { ...t, lastPromptAt: 3 }
+  expect(chatStatus(t)).toEqual({ kind: 'offPlan', detail: 'X' })
+  t = applyPlan(t, { phases: plan([['P', 'A', 'done'], ['P', 'X', 'done'], ['P', 'B', 'doing']]) }, ctx(4))
+  expect(chatStatus(t)).toEqual({ kind: 'doing', detail: 'B' })
+  expect(chatStatus({ ...t, steps: t.steps.map(s => (s.title === 'B' ? { ...s, waitingOn: 'you' as const, waitingFor: 'run it' } : s)) })).toEqual({ kind: 'waiting', detail: 'run it' })
+  expect(chatStatus({ ...t, steps: t.steps.map(s => (s.title === 'B' ? { ...s, status: 'blocked' as const } : s)) })?.kind).toBe('blocked')
+  expect(chatStatus({ ...t, turn: t.turn + 6 })?.kind).toBe('stuck')
+  t = applyPlan(t, { phases: plan([['P', 'A', 'done'], ['P', 'X', 'done'], ['P', 'B', 'done']]) }, ctx(5))
+  expect(chatStatus(t)).toEqual({ kind: 'achieved', detail: 'G' })
+})
+
 test('the goal says it is achieved once every step is done', { options: { autoStart: true } }, async ($, on) => {
   mock.store(on)
   mock.clock(on, { now: 1_000_000 })
@@ -472,6 +497,9 @@ test('the goal says it is achieved once every step is done', { options: { autoSt
   expect(await achieved()).toBe(false)
   await $.tool.call({ tool: PROGRESS_TOOL, goal: 'Ship it', phases: plan([['P', 'A', 'done'], ['P', 'B', 'done']]) })
   expect(await achieved()).toBe(true)
+  const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect(await band.find({ type: 'Text', text: 'Goal reached' })).toBeTruthy()
+  await band.unmount()
   // The two plan calls show in the cost line; no turn has passed, so the tool description counts nothing yet.
   expect(await ui.find({ type: 'Text', text: /^≈ \d+ tokens used by Wayfinder here · plan updates [1-9]\d* · notes 0 · tool description 0 \(0 turns/ })).toBeTruthy()
   await ui.unmount()

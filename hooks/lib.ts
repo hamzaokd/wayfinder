@@ -85,6 +85,26 @@ export function isStuck(trail: Trail, s: Step): boolean {
   return s.status === 'doing' && trail.turn - (s.startedTurn ?? trail.turn) >= STUCK_TURNS
 }
 
+export type ChatStatus = { kind: 'blocked' | 'waiting' | 'stuck' | 'achieved' | 'offPlan' | 'doing'; detail?: string }
+
+/** What the strip above the prompt shows, most pressing first; nothing without a plan. Off plan: the plan drifted this turn, or the current step wasn't in it. */
+export function chatStatus(t: Trail): ChatStatus | undefined {
+  if (t.steps.length === 0) return undefined
+  const open = t.steps.filter(s => s.status !== 'done' && s.status !== 'dropped')
+  const blocked = open.find(s => s.status === 'blocked')
+  if (blocked) return { kind: 'blocked', detail: blocked.title }
+  const waiting = open.find(s => s.waitingOn === 'you')
+  if (waiting) return { kind: 'waiting', detail: waiting.waitingFor ?? waiting.title }
+  const stuck = open.find(s => isStuck(t, s))
+  if (stuck) return { kind: 'stuck', detail: stuck.title }
+  if (open.length === 0) return t.steps.some(s => s.status === 'done') ? { kind: 'achieved', detail: t.goal } : undefined
+  const drift = t.events.filter(e => e.kind === 'drift' && e.at >= t.lastPromptAt).at(-1)
+  const cur = currentStep(t.steps)
+  if (drift) return { kind: 'offPlan', detail: drift.text }
+  if (cur?.addedLate) return { kind: 'offPlan', detail: cur.title }
+  return cur && { kind: 'doing', detail: cur.title }
+}
+
 export function pushEvents(trail: Trail, events: readonly TrailEvent[]): Trail {
   return events.length === 0 ? trail : { ...trail, events: [...trail.events, ...events].slice(-MAX_EVENTS) }
 }

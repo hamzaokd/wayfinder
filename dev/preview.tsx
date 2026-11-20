@@ -75,6 +75,6 @@ test('preview', { options: { autoStart: /*AUTOSTART*/ true } }, async ($, on) =>
   await clock.advance(16_000)
 
   const ui = await $.ui.mount({ plugin: 'wayfinder', component: 'Pane', requestId: 'wayfinder', surface: 'desktop', props: { title: 'Wayfinder', isFocused: false, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 60 }, view: {} } })
-  await dump(ui, dialogs)
+  await dump(ui, dialogs, $)
   await ui.unmount()
 })
