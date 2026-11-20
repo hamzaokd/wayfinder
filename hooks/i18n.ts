@@ -144,6 +144,8 @@ const EN = {
   cmdLangAuto: "The pane follows Claude Code's language setting again: French if it names French, English otherwise.",
   cmdLangUsage: "Usage: /wayfinder-lang fr, /wayfinder-lang en, or /wayfinder-lang auto (follow Claude Code's language setting).",
   cmdOpened: 'Wayfinder pane opened.',
+  costLine: (total: string) => `≈ ${total} tokens used by Wayfinder here`,
+  costTail: (plan: string, notes: string, desc: string, turns: number) => ` · plan updates ${plan} · notes ${notes} · tool description ${desc} (${n(turns, 'turn', 'turns')}, mostly cached)`,
   // Settings
   settings: 'Settings',
   setAutoStart: 'Turn on in new sessions:',
@@ -287,6 +289,8 @@ const FR: typeof EN = {
   cmdLangAuto: 'Le panneau suit à nouveau le réglage de langue de Claude Code : français s’il le demande, anglais sinon.',
   cmdLangUsage: 'Utilisation : /wayfinder-lang fr, /wayfinder-lang en, ou /wayfinder-lang auto (suivre le réglage de langue de Claude Code).',
   cmdOpened: 'Panneau Wayfinder ouvert.',
+  costLine: total => `≈ ${total} tokens utilisés par Wayfinder ici`,
+  costTail: (plan, notes, desc, turns) => ` · mises à jour du plan ${plan} · notes ${notes} · description de l’outil ${desc} (${n(turns, 'tour', 'tours')}, surtout en cache)`,
   settings: 'Réglages',
   setAutoStart: 'Activer dans les nouvelles sessions :',
   yes: 'oui',

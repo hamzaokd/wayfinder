@@ -460,6 +460,8 @@ test('the goal says it is achieved once every step is done', { options: { autoSt
   expect(await achieved()).toBe(false)
   await $.tool.call({ tool: PROGRESS_TOOL, goal: 'Ship it', phases: plan([['P', 'A', 'done'], ['P', 'B', 'done']]) })
   expect(await achieved()).toBe(true)
+  // The two plan calls show in the cost line; no turn has passed, so the tool description counts nothing yet.
+  expect(await ui.find({ type: 'Text', text: /^≈ \d+ tokens used by Wayfinder here · plan updates [1-9]\d* · notes 0 · tool description 0 \(0 turns/ })).toBeTruthy()
   await ui.unmount()
 })
 

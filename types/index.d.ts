@@ -72,6 +72,8 @@ export type Trail = {
   unplannedFiles: string[]
   /** Wayfinder on in this session (/wayfinder, /wayfinder-off). Unset: on when it has a plan, else the autoStart setting. */
   isOn?: boolean
+  /** Tokens Wayfinder added here, estimated at 4 characters a token: plan tool calls, notes, and turns the tool's description rode along. */
+  cost?: { plan: number; notes: number; turns: number }
 }
 
 export type Lane = {

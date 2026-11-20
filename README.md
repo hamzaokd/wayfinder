@@ -35,6 +35,8 @@ Wayfinder is **off in each session until you type `/wayfinder`**, so it costs no
 - `/wayfinder-forget` hides the other sessions listed now until they move again (their plans stay saved).
 - `/wayfinder-lang fr`, `en` or `auto` sets the pane's language in every session; `auto` follows Claude Code's `language` setting.
 
+Under the timeline, a dim line estimates what Wayfinder cost in this session (about 4 characters a token): plan updates, notes to Claude, and the plan tool's description, counted once per turn though Claude Code mostly caches it. It counts from this version on.
+
 **Settings** (the pane's folded Settings block, or `/config`, stored in `settings.json` under `pluginConfigs`): turn on in new sessions (default no), how many days back other sessions show (7), and how many are listed (8). Other open sessions use a change after `/reload-plugins`.
 
 The pane speaks French when Claude Code's `language` setting names French (`"language": "french"` in `~/.claude/settings.json`), and English otherwise.
