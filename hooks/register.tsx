@@ -23,6 +23,7 @@ import {
   repoName,
   sinceYouLeft,
   stepMenu,
+  stepNo,
   waitingOnYou,
 } from './lib'
 import type { MenuOption, PlanInput, ToolUseLite } from './lib'
@@ -707,11 +708,11 @@ export const register: Register = on => {
             {showOthers &&
               rest.map(o => {
                 const c = currentStep(o.steps)
-                const n = c ? o.steps.indexOf(c) + 1 : 0
+                const n = c ? stepNo(o, c) : ''
                 return (
                   <Text dimColor>
                     {o.goal ?? T.noPlanYet} · {Object.keys(o.seen).map(repoName).join(', ') || T.noRepoShort}
-                    {c ? T.stepNofM(n, o.steps.length, c.title) : ''} · {ago(now - o.updatedAt)}
+                    {c ? T.stepNofM(n, c.title) : ''} · {ago(now - o.updatedAt)}
                   </Text>
                 )
               })}

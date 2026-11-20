@@ -353,14 +353,19 @@ export function sinceYouLeft(trail: Trail, others: readonly Trail[], stashes: re
  */
 export type MenuOption = { label: string; kind: 'main' | 'side' | 'mark'; prompt?: string }
 
+/** A step's number as phase.step ("2.3"): its phase's place in the plan, then its place in that phase. */
+export function stepNo(trail: Trail, s: Step): string {
+  return `${trail.phases.indexOf(s.phase) + 1}.${trail.steps.filter(x => x.phase === s.phase).indexOf(s) + 1}`
+}
+
 export function stepMenu(trail: Trail, s: Step, now: number): { header: string; question: string; options: MenuOption[] } {
-  const n = trail.steps.indexOf(s) + 1
+  const n = stepNo(trail, s)
   // Step text was written by Claude: inside a prompt it stays one quoted line, never loose instructions.
   const name = T.stepName(n, quoted(s.title))
   const isOpen = s.status !== 'done' && s.status !== 'dropped'
   const when = s.doneAt ? (s.status === 'dropped' ? T.droppedAgo : T.doneAgo)(ago(now - s.doneAt)) : s.startedAt ? T.startedAgo(ago(now - s.startedAt)) : T.notStarted
   const lines = [
-    `${n}. ${s.title} (${T.status[s.status] ?? s.status}, ${when})`,
+    `${n} ${s.title} (${T.status[s.status] ?? s.status}, ${when})`,
     s.detail ?? '',
     s.note ? T.result(s.note) : '',
     isOpen && s.waitingOn ? T.waitingOn(s.waitingOn, s.waitingFor) : '',
@@ -382,7 +387,7 @@ export function stepMenu(trail: Trail, s: Step, now: number): { header: string; 
     if (s.waitingOn === 'you') options.push({ label: T.didMyPart, kind: 'main', prompt: T.pDidMyPart(quoted(s.waitingFor ?? s.title), name) })
     else if (s.status === 'doing' || first === s) options.push({ label: T.continueStep, kind: 'main', prompt: T.pContinue(name) })
     else {
-      const from = first ? trail.steps.indexOf(first) + 1 : n
+      const from = first ? stepNo(trail, first) : n
       options.push({ label: T.workUpTo, kind: 'main', prompt: T.pWorkUpTo(name, from, n) })
     }
     options.push({ label: T.explain, kind: 'side', prompt: T.pExplain(name) })

@@ -3,7 +3,7 @@
 // Drawn as rows: a slice of the lane drawing beside native, clickable text.
 import type { GraphCommit, Lane, RepoLive, Step, Trail } from '../types'
 import { T } from './i18n'
-import { ago, isStuck } from './lib'
+import { ago, isStuck, stepNo } from './lib'
 
 export type GraphView = {
   trail: Trail
@@ -185,7 +185,7 @@ export function rowLabel(v: GraphView, it: Item): RowLabel | undefined {
     const s = it.s
     const tag = stepTag(v, s)
     return {
-      text: `${it.index + 1}. ${s.title}`,
+      text: `${stepNo(v.trail, s)} ${s.title}`,
       tail: tag && ` · ${tag.text}`,
       tailColor: tag?.isAlert ? 'warning' : undefined,
       color: s.status === 'doing' ? 'suggestion' : s.status === 'blocked' ? 'error' : undefined,
@@ -195,7 +195,7 @@ export function rowLabel(v: GraphView, it: Item): RowLabel | undefined {
       id: rowKey(it),
     }
   }
-  if (it.kind === 'phase') return { text: `${it.isOpen ? '▾' : '▸'} ${it.title}`, tail: ` · ${it.summary}`, bold: true, color: it.state === 'current' ? 'suggestion' : undefined, dim: it.state !== 'current', id: rowKey(it) }
+  if (it.kind === 'phase') return { text: `${it.isOpen ? '▾' : '▸'} ${v.trail.phases.indexOf(it.title) + 1} ${it.title}`, tail: ` · ${it.summary}`, bold: true, color: it.state === 'current' ? 'suggestion' : undefined, dim: it.state !== 'current', id: rowKey(it) }
   if (it.kind === 'decision') return { text: T.decision(it.text), dim: true }
   if (it.kind === 'stash') return { text: `${it.name} ${it.subject.replace(/^(WIP on|On) [^:]+: /, '')} · ${ago(v.now - it.at)}`, dim: true }
   if (it.kind === 'dirty') return { text: T.filesChanged(it.count) }
