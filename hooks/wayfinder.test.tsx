@@ -138,12 +138,10 @@ test('the graph puts steps on their branch, folds finished phases, and plans the
     'step:PR@1',
     'merge',
   ])
-  const { source, hits, ids } = graphSvg(view)
+  const { source, ids } = graphSvg(view)
   expect(source).toContain('▸ Investigate<tspan class="phase-sub"> · 1 step done · 1 commit')
   expect(source).toContain('▾ Build<tspan')
-  // Every step, phase and labelled commit row is a click target (the folded phase's commit is a bare dot);
-  // nothing animates on a first draw.
-  expect(hits.map(h => h.id)).toEqual(['phase:Investigate', 'phase:Build', 'step:Writer', 'commit:' + H('b'), 'commit:' + H('l'), 'commit:' + H('m'), 'phase:Ship', 'step:PR'])
+  // Nothing animates on a first draw.
   expect(source).not.toContain('class="enter"')
   // Drawn again with a step that wasn't there: it eases in, the rows below slide down.
   const again = graphSvg({ ...view, trail: { ...t, steps: [...t.steps, { ...t.steps[2]!, title: 'Docs' }] } }, new Set(ids)).source
@@ -153,8 +151,6 @@ test('the graph puts steps on their branch, folds finished phases, and plans the
   expect(source).toContain('fix/login · also edits auth.ts')
   expect(source).toContain('Merge into main (planned)')
   expect(source).toContain('+3 other branches hidden')
-  // Hovering a step shows everything about it.
-  expect(source).toContain('<title>2. Writer (doing) · Build · on feature/x')
   expect(graphText(view).some(l => l.text.includes('◉ 2. Writer · you are here'))).toBe(true)
 
   // A click folds or unfolds one phase.
@@ -278,7 +274,7 @@ test('the pane: the graph, clicks on it, the dialog, and where actions go', asyn
     expect(await graph()).toContain('2. Benchmark on 1M rows · you are here')
     expect(await graph()).toContain('bbbbbbb add writer')
 
-    // A click on a row: the terminal's lines are buttons; on desktop a layer over the drawing maps the click to a row.
+    // A click on a row: the terminal's graph lines are buttons; on desktop the step list under the picture is.
     const click = async (id: string) => {
       if (surface === 'terminal') {
         const lines = await ui.findAll({ type: 'Button' })
@@ -286,23 +282,27 @@ test('the pane: the graph, clicks on it, the dialog, and where actions go', asyn
         await ui.press({ key: line!.key! })
         return
       }
-      const layer = await ui.find({ type: 'Client' })
-      const { height, hits } = layer!.props.props as { height: number; hits: { y1: number; y2: number; id: string }[] }
-      const hit = hits.find(h => h.id === id)!
-      await ui.resize({ columns: 60, rows: height, in: 'clicks-r' })
-      const y = Math.floor((hit.y1 + hit.y2) / 2)
-      // Hovering outlines the row a click would open.
-      await ui.pointer({ type: 'move', x: 5, y, in: 'clicks-r' })
-      expect(await ui.find({ key: 'hover', in: 'clicks-r' })).toBeTruthy()
-      await ui.pointer({ type: 'down', x: 5, y, button: 'left', in: 'clicks-r' })
+      const key = id === 'phase:Investigate' ? 'phase-r-Investigate' : id === 'step:Open PR' ? 'step-r-3' : id
+      await ui.press({ key })
+    }
+    if (surface === 'desktop') {
+      // A list, not a form: glyph, number and title, at most one short tag; the row lights under the pointer.
+      expect((await ui.find({ key: 'step-r-2' }))?.text).toBe('◉ 2. Benchmark on 1M rows · waiting on you')
+      expect((await ui.find({ key: 'step-r-3' }))?.text).toBe('○ 3. Open PR')
+      expect(JSON.stringify(await ui.find({ key: 'row-r-step-3' }))).toContain('"hover":{"underline":true}')
     }
 
     // The finished phase is folded into one row; a click on it opens it, another folds it.
+    // The list folds with the graph.
+    const listed = async () => surface === 'desktop' && !!(await ui.find({ key: 'step-r-1' }))
     expect(await graph()).not.toContain('1. Check S3 permissions')
+    expect(await listed()).toBe(false)
     await click('phase:Investigate')
     expect(await graph()).toContain('1. Check S3 permissions')
+    expect(await listed()).toBe(surface === 'desktop')
     await click('phase:Investigate')
     expect(await graph()).not.toContain('1. Check S3 permissions')
+    expect(await listed()).toBe(false)
 
     // A click on a step opens the dialog; work becomes a draft in the message box, never a send.
     answer = 'Work up to here'

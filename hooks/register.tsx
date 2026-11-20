@@ -3,7 +3,7 @@ import type { EngineInterface, Register } from 'claude-code'
 
 import type { RepoLive, Seen, Trail, TrailEvent } from '../types'
 import { git, isAncestor, repoGraph, repoRoot, snapshot } from './gitgraph'
-import { graphSvg, graphText, isPhaseOpen, phaseState } from './graph'
+import { graphSvg, graphText, isPhaseOpen, phaseState, stepGlyph } from './graph'
 import type { GraphView } from './graph'
 import {
   ago,
@@ -385,25 +385,9 @@ export const register: Register = on => {
     return { text: 'Wayfinder pane opened.' }
   })
 
-  // A click on the graph, from the layer over it. The data came from code: check its shape.
-  on('ui.message', async ($, e, next) => {
-    const done = await next(e)
-    const data = e.data as { id?: unknown; probe?: unknown } | null
-    note(`click from ${e.surface} ${e.element}: id=${String(data?.id)} probe=${JSON.stringify(data?.probe ?? null).slice(0, 200)}`)
-    const id = data?.id
-    if (typeof id === 'string' && id.length < 300) void openRow($, id).catch(err => note(`openRow failed: ${String(err).slice(0, 200)}`))
-    return done
-  })
-
-  // The click layer failed to load or draw: say so, the graph still shows.
-  on('ui.fault', async ($, e, next) => {
-    note(`click layer fault: ${JSON.stringify(e).slice(0, 300)}`)
-    $.ui.status('wayfinder: the click layer failed; see mcp__wayfinder__debug')
-    return next(e)
-  })
-
   // Read-only: what the diagnostics recorded, for finding where a click is lost.
-  on('tool.call', { tool: 'mcp__wayfinder__debug' }, async () => ({ result: diag.length ? diag.join('\n') : 'nothing recorded yet' }))
+  // A RegExp: the generated tool-name types can predate this tool.
+  on('tool.call', { tool: /^mcp__wayfinder__debug$/ }, async () => ({ result: diag.length ? diag.join('\n') : 'nothing recorded yet' }))
 
   on('tool.call', { tool: PROGRESS_TOOL }, async ($, e) => {
     const ctx = await planCtx($)
@@ -465,7 +449,6 @@ export const register: Register = on => {
     const { Box, Text, Button } = els
     // Desktop, editor and mobile draw Svg; the terminal gets the lanes in characters.
     const Svg = e.surface !== 'terminal' && 'Svg' in els ? els.Svg : undefined
-    const Client = 'Client' in els ? els.Client : undefined
     const t = await read($, trail)
     const lives = await read($, repos)
     const rest = await read($, others)
@@ -491,21 +474,10 @@ export const register: Register = on => {
       if (Svg) {
         const drawn = graphSvg(view, drawnRows.get(r.root))
         drawnRows.set(r.root, new Set(drawn.ids))
-        note(`drew ${r.name} on ${e.surface}: ${drawn.width}x${drawn.height}px, ${drawn.hits.length} click targets, layer ${Client ? 'on' : 'missing'}`)
+        note(`drew ${r.name} on ${e.surface}: ${drawn.width}x${drawn.height}px`)
         const alt = `Branch graph of ${r.name}: ${t.steps.map((s, i) => `${i + 1}. ${s.title} (${s.status})`).join(', ') || 'commits'}`
-        // The drawing can't take clicks: a transparent layer of the same size over it does.
-        // A plain image, not `isInteractive`: that draws in a frame of its own, which keeps the clicks for itself.
-        return (
-          <Box position="relative">
-            <Svg source={drawn.source} alt={alt} width={drawn.width} height={drawn.height} />
-            {Client && (
-              // Pinned by all four edges: a 100% height resolved to a single row in the app.
-              <Box position="absolute" top={0} bottom={0} left={0} right={0} flexDirection="column">
-                <Client key={`clicks-${r.name}`} module="./overlay.ts" props={{ height: drawn.height, hits: drawn.hits }} flexGrow={1} />
-              </Box>
-            )}
-          </Box>
-        )
+        // The drawing is a picture only (clicks on an Svg never reach a mod): the list under it takes them.
+        return [<Svg source={drawn.source} alt={alt} width={drawn.width} height={drawn.height} />, stepList(r)]
       }
       // The terminal: each line that names a step, phase or commit is a button.
       return graphText(view).map((line, i) => {
@@ -523,6 +495,47 @@ export const register: Register = on => {
           text
         )
       })
+    }
+
+    // The plan under a repo's picture: phase headers fold, a step opens its dialog.
+    const stepList = (r: RepoLive) => {
+      const mine = t.steps.filter(s => (s.repo ? s.repo === r.root : r.root === primary))
+      return (
+        <Box flexDirection="column" marginTop={1}>
+          {t.phases.flatMap(phase => {
+            const own = mine.filter(s => s.phase === phase)
+            if (own.length === 0) return []
+            const all = t.steps.filter(s => s.phase === phase)
+            const isOpen = isPhaseOpen(phase, phaseState(all), open)
+            const live = all.filter(s => s.status !== 'dropped')
+            return [
+              <Box key={`row-${r.name}-phase-${phase}`} flexDirection="row">
+                <Button key={`phase-${r.name}-${phase}`} plain hover={{ color: 'suggestion' }} onPress={() => void openRow($, `phase:${phase}`)}>
+                  <Text weight="semibold">{isOpen ? '▾' : '▸'} {phase}</Text>
+                  <Text dimColor> {live.filter(s => s.status === 'done').length}/{live.length}</Text>
+                </Button>
+              </Box>,
+              ...(isOpen ? own : []).map(s => {
+                const n = t.steps.indexOf(s) + 1
+                const isOpenStep = s.status !== 'done' && s.status !== 'dropped'
+                const tag = s.status === 'dropped' ? 'dropped' : s.addedLate ? 'not in plan' : isOpenStep && s.waitingOn === 'you' ? 'waiting on you' : s.status === 'doing' ? 'you are here' : undefined
+                const color = s.status === 'done' ? 'success' : s.status === 'doing' ? 'suggestion' : s.status === 'blocked' ? 'error' : undefined
+                return (
+                  <Box key={`row-${r.name}-step-${n}`} flexDirection="row" paddingLeft={2}>
+                    <Button key={`step-${r.name}-${n}`} label={`${n}. ${s.title}`} plain hover={{ underline: true }} onPress={() => void openRow($, `step:${s.title}`)}>
+                      <Text color={color}>{stepGlyph(s)} </Text>
+                      <Text dimColor={s.status === 'todo' || s.status === 'dropped'} strikethrough={s.status === 'dropped'}>
+                        {n}. {s.title}
+                      </Text>
+                      {tag && <Text dimColor color={tag === 'waiting on you' ? 'warning' : undefined}> · {tag}</Text>}
+                    </Button>
+                  </Box>
+                )
+              }),
+            ]
+          })}
+        </Box>
+      )
     }
 
     return (
@@ -593,8 +606,6 @@ export const register: Register = on => {
             <Box flexDirection="column">{graphOf(r)}</Box>
           </Box>
         ))}
-
-        {t.steps.length > 0 && <Text dimColor>Click a step for its details and actions, a phase to fold it.</Text>}
 
         {t.unplannedFiles.length > 0 && (
           <Text color="warning">
