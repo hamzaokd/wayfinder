@@ -135,20 +135,22 @@ export function items(v: GraphView): { list: Item[]; lanes: Lane[]; current: num
   if (hasFuture && base && !lanes[current]?.isBase && v.isPrimary) list.push({ kind: 'merge', t: Infinity, o: 1e9, lane: current, into: base.branch })
 
   list.sort((a, b) => a.t - b.t || a.o - b.o)
-  // Each phase's rows stay together, where its first row falls in time: phases that overlap
-  // in time (a step finished after the next phase began) must not draw blocks over each other.
+  // Each phase's rows stay together, and phases keep the plan's order: phases that overlap in
+  // time (a step finished after the next phase began) must neither cross nor swap places.
+  // Rows outside any phase keep their place in time between the blocks.
   const groups = new Map<string, Item[]>()
-  const slots: (Item | Item[])[] = []
+  const slots: (Item | null)[] = []
   for (const it of list) {
     if (it.phase === undefined) slots.push(it)
     else if (groups.has(it.phase)) groups.get(it.phase)!.push(it)
     else {
-      const g = [it]
-      groups.set(it.phase, g)
-      slots.push(g)
+      groups.set(it.phase, [it])
+      slots.push(null)
     }
   }
-  return { list: slots.flat(), lanes, current }
+  const inPlanOrder = [...groups.keys()].sort((a, b) => trail.phases.indexOf(a) - trail.phases.indexOf(b))
+  let next = 0
+  return { list: slots.flatMap(s => s ?? groups.get(inPlanOrder[next++]!)!), lanes, current }
 }
 
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')

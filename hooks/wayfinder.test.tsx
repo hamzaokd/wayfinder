@@ -410,3 +410,10 @@ test('the pane follows a French language setting, and is English otherwise', asy
   await ui.unmount()
   setLang('en')
 })
+
+test('phase blocks keep the plan order even when a later phase started first', () => {
+  let t = applyPlan(emptyTrail('s1', 0), { phases: plan([['A', 'a1', 'todo'], ['B', 'b1', 'doing']]) }, ctx(10))
+  t = applyPlan(t, { phases: plan([['A', 'a1', 'done'], ['B', 'b1', 'doing']]) }, ctx(20))
+  const { list } = items({ trail: t, repo: live(), isPrimary: true, expanded: { A: true }, now: 30, ownerOf: new Map() })
+  expect(list.flatMap(i => (i.kind === 'phase' ? [i.title] : []))).toEqual(['A', 'B'])
+})
