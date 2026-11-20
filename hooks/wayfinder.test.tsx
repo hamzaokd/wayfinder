@@ -5,6 +5,7 @@ import type { RepoLive } from '../types'
 import { GIT } from './gitgraph'
 import { graphLanes, graphText, items } from './graph'
 import { applyPlan, attributeEdits, dirsFromToolUse, emptyTrail, normPath, PROGRESS_TOOL, quoted, rebuildFromHistory, sinceYouLeft, stepMenu, waitingOnYou } from './lib'
+import { langOf, setLang } from './i18n'
 
 const PANE = {
   plugin: 'wayfinder',
@@ -376,4 +377,31 @@ test('a fork opens with the plan its conversation carries', async ($, on) => {
   expect((await ui.find({ type: 'Text', text: /^Add CSV export$/ }))?.text).toBe('Add CSV export')
   expect(await ui.find({ type: 'Text', text: /1\. Writer · you are here/ })).toBeTruthy()
   await ui.unmount()
+})
+
+test('the pane follows a French language setting, and is English otherwise', async ($, on) => {
+  expect(['french', 'Français', 'fr', 'fr-FR', 'francais'].map(langOf)).toEqual(['fr', 'fr', 'fr', 'fr', 'fr'])
+  expect(['english', 'japanese', 'frisian', '', undefined, 42].map(langOf)).toEqual(['en', 'en', 'en', 'en', 'en', 'en'])
+
+  mock.store(on)
+  mock.clock(on, { now: 1_000_000 })
+  fakeGit(on, { head: H('a'), log: '' })
+  on('settings.read', () => ({ value: { language: 'french' } }))
+  on('session.id', () => ({ value: 'fr-1' }))
+  on('session.messages', () => ({ value: [] }))
+  on('tool.register', () => ({ value: { tool: PROGRESS_TOOL } }))
+  on('command.register', () => ({ value: { command: 'wayfinder' } }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('ui.status', () => ({ value: undefined }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  await $.session.start({ cwd: 'C:/r', surface: 'desktop', isInteractive: true })
+  await $.tool.call({ tool: PROGRESS_TOOL, goal: 'Export CSV', phases: plan([['Construire', 'Écrivain', 'doing'], ['Construire', 'PR', 'todo']]) })
+
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  const text = (await ui.findAll({ type: 'Text' })).map(x => x.text).join('\n')
+  expect(text).toContain('OBJECTIF')
+  expect(text).toContain(' · tu es ici')
+  expect(text).toContain('étape 1 sur 2')
+  await ui.unmount()
+  setLang('en')
 })

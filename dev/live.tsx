@@ -16,6 +16,7 @@ const NOW = /*NOW*/ 0
 test('live preview', async ($, on) => {
   mock.store(on, STORE)
   const dialogs = captureDialogs(on)
+  on('settings.read', () => ({ value: { language: /*LANG*/ 'english' } }))
   mock.clock(on, { now: NOW })
   const asked: { cwd: string; args: string[] }[] = []
   on('process.run', (_, e) => {

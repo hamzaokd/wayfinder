@@ -2,6 +2,7 @@
 // phases are blocks, steps sit on the branch where they ran, todo steps continue dashed.
 // Drawn as rows: a slice of the lane drawing beside native, clickable text.
 import type { GraphCommit, Lane, RepoLive, Step, Trail } from '../types'
+import { T } from './i18n'
 import { ago, isStuck } from './lib'
 
 export type GraphView = {
@@ -39,7 +40,6 @@ export function isPhaseOpen(title: string, state: PhaseState, expanded: Readonly
   return expanded[title] ?? state !== 'done'
 }
 
-const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
 
 /** Everything the graph draws, in drawing order. */
 export function items(v: GraphView): { list: Item[]; lanes: Lane[]; current: number } {
@@ -85,7 +85,7 @@ export function items(v: GraphView): { list: Item[]; lanes: Lane[]; current: num
     const lane = lanes[c.lane]
     if (!lane) continue
     const owner = v.ownerOf.get(c.hash)
-    const tag = owner ? `from "${owner}"` : outside.has(c.hash) ? 'outside' : undefined
+    const tag = owner ? T.fromSession(owner) : outside.has(c.hash) ? T.outside : undefined
     const phase = phaseAt(c.at)?.title
     const isSide = !lane.isBase && !lane.isCurrent
     const isTip = tipOf.get(c.lane) === c.hash
@@ -120,8 +120,8 @@ export function items(v: GraphView): { list: Item[]; lanes: Lane[]; current: num
     if (!steps.some(({ s }) => s.phase === p.title)) continue
     const nCommits = p.isOpen ? 0 : commits.filter(c => phaseAt(c.at)?.title === p.title).length
     const summary = [
-      p.state === 'done' ? `${plural(p.count, 'step')} done` : p.state === 'current' ? `step ${Math.min(p.count + 1, p.total)} of ${p.total}` : plural(p.total, 'step'),
-      nCommits ? plural(nCommits, 'commit') : '',
+      p.state === 'done' ? T.stepsDone(p.count) : p.state === 'current' ? T.stepOf(Math.min(p.count + 1, p.total), p.total) : T.steps(p.total),
+      nCommits ? T.commits(nCommits) : '',
     ].filter(Boolean).join(' · ')
     // An open phase starts with its header; a closed one is one row where it ended.
     const t = p.isOpen ? p.start : p.end
@@ -162,11 +162,11 @@ export function laneColor(lane: Lane, i: number): string {
 /** At most one short tag after a step's title; the details are in its dialog. `isAlert` draws it in the warning color. */
 export function stepTag(v: GraphView, s: Step): { text: string; isAlert: boolean } | undefined {
   const isOpen = s.status !== 'done' && s.status !== 'dropped'
-  if (s.status === 'dropped') return { text: 'dropped', isAlert: false }
-  if (s.addedLate) return { text: 'not in plan', isAlert: true }
-  if (isOpen && s.waitingOn === 'you') return { text: 'waiting on you', isAlert: true }
-  if (isStuck(v.trail, s)) return { text: `stuck ${v.trail.turn - (s.startedTurn ?? v.trail.turn)} turns`, isAlert: true }
-  if (s.status === 'doing') return { text: 'you are here', isAlert: false }
+  if (s.status === 'dropped') return { text: T.tagDropped, isAlert: false }
+  if (s.addedLate) return { text: T.tagNotInPlan, isAlert: true }
+  if (isOpen && s.waitingOn === 'you') return { text: T.tagWaiting, isAlert: true }
+  if (isStuck(v.trail, s)) return { text: T.tagStuck(v.trail.turn - (s.startedTurn ?? v.trail.turn)), isAlert: true }
+  if (s.status === 'doing') return { text: T.tagHere, isAlert: false }
   return undefined
 }
 
@@ -194,10 +194,10 @@ export function rowLabel(v: GraphView, it: Item): RowLabel | undefined {
     }
   }
   if (it.kind === 'phase') return { text: `${it.isOpen ? '▾' : '▸'} ${it.title}`, tail: ` · ${it.summary}`, bold: true, color: it.state === 'current' ? 'suggestion' : undefined, dim: it.state !== 'current', id: rowKey(it) }
-  if (it.kind === 'decision') return { text: `Decision: ${it.text}`, dim: true }
+  if (it.kind === 'decision') return { text: T.decision(it.text), dim: true }
   if (it.kind === 'stash') return { text: `${it.name} ${it.subject.replace(/^(WIP on|On) [^:]+: /, '')} · ${ago(v.now - it.at)}`, dim: true }
-  if (it.kind === 'dirty') return { text: `${plural(it.count, 'file')} changed, not committed` }
-  return { text: `Merge into ${it.into} (planned)`, dim: true }
+  if (it.kind === 'dirty') return { text: T.filesChanged(it.count) }
+  return { text: T.mergeInto(it.into), dim: true }
 }
 
 /** One row of the timeline: its band of the lane drawing, in pixels, and its text. */

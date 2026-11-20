@@ -1,5 +1,6 @@
 // Pure helpers: no `$`, so the tests can run them directly.
 import type { Decision, Step, StepStatus, Trail, TrailEvent } from '../types'
+import { T } from './i18n'
 
 export const MAX_EVENTS = 200
 const STATUSES: readonly StepStatus[] = ['todo', 'doing', 'done', 'blocked', 'dropped']
@@ -308,7 +309,7 @@ export function waitingOnYou(self: Trail, others: readonly Trail[]): WaitingItem
   return [self, ...others].flatMap(t =>
     t.steps
       .filter(s => isOpen(s) && s.waitingOn === 'you')
-      .map(s => ({ session: t.goal ?? '(no goal yet)', isSelf: t === self, step: s.title, what: s.waitingFor })),
+      .map(s => ({ session: t.goal ?? T.noGoal, isSelf: t === self, step: s.title, what: s.waitingFor })),
   )
 }
 
@@ -322,27 +323,27 @@ export function sinceYouLeft(trail: Trail, others: readonly Trail[], stashes: re
   const lines: string[] = []
   const count = (kind: TrailEvent['kind'], origin: TrailEvent['origin']) => fresh.filter(e => e.kind === kind && e.origin === origin)
   const outside = count('commit', 'outside')
-  if (outside.length) lines.push(`${outside.length} commit(s) outside this session: ${[...new Set(outside.map(e => e.repo))].join(', ')}`)
+  if (outside.length) lines.push(T.awayOutsideCommits(outside.length, [...new Set(outside.map(e => e.repo))].join(', ')))
   const own = count('commit', 'session')
-  if (own.length) lines.push(`Claude made ${own.length} commit(s)`)
+  if (own.length) lines.push(T.awayClaudeCommits(own.length))
   const done = fresh.filter(e => e.kind === 'step')
-  if (done.length) lines.push(`Steps finished: ${done.map(e => e.step).join(', ')}`)
+  if (done.length) lines.push(T.awayStepsDone(done.map(e => e.step).join(', ')))
   const drifted = fresh.filter(e => e.kind === 'drift')
-  if (drifted.length) lines.push(`Plan changed ${drifted.length} time(s)`)
-  if (fresh.some(e => e.kind === 'rewrite')) lines.push('Branch history was rewritten')
+  if (drifted.length) lines.push(T.awayPlanChanged(drifted.length))
+  if (fresh.some(e => e.kind === 'rewrite')) lines.push(T.awayRewritten)
   const switched = fresh.filter(e => e.kind === 'branch')
-  if (switched.length) lines.push(`Branch switched: ${switched.at(-1)!.text}`)
+  if (switched.length) lines.push(T.awaySwitched(switched.at(-1)!.text))
   const newStashes = stashes.filter(s => s.at > since)
-  if (newStashes.length) lines.push(`${newStashes.length} new stash(es)`)
+  if (newStashes.length) lines.push(T.awayStashes(newStashes.length))
   for (const o of others) {
     if (o.updatedAt <= since) continue
     const cur = currentStep(o.steps)
-    lines.push(`"${o.goal ?? 'another session'}" moved on${cur ? `: now on ${cur.title}` : ''}`)
+    lines.push(T.awayOther(o.goal ?? T.anotherSession, cur?.title))
   }
   const mins = Math.round((now - since) / 60_000)
-  const away = mins < 60 ? `${mins} min` : mins < 1440 ? `${Math.round(mins / 60)} h` : `${Math.round(mins / 1440)} d`
+  const away = T.awayFor(mins)
   const cur = currentStep(trail.steps)
-  return { away, lines: lines.length ? lines : ['Nothing changed.'], next: cur ? `${cur.title}${cur.waitingOn === 'you' ? ' (waiting on you)' : ''}` : trail.whereWasI }
+  return { away, lines: lines.length ? lines : [T.nothingChanged], next: cur ? `${cur.title}${cur.waitingOn === 'you' ? T.waitingSuffix : ''}` : trail.whereWasI }
 }
 
 /**
@@ -355,39 +356,39 @@ export type MenuOption = { label: string; kind: 'main' | 'side' | 'mark'; prompt
 export function stepMenu(trail: Trail, s: Step, now: number): { header: string; question: string; options: MenuOption[] } {
   const n = trail.steps.indexOf(s) + 1
   // Step text was written by Claude: inside a prompt it stays one quoted line, never loose instructions.
-  const name = `step ${n} ${quoted(s.title)}`
+  const name = T.stepName(n, quoted(s.title))
   const isOpen = s.status !== 'done' && s.status !== 'dropped'
-  const when = s.doneAt ? `${s.status === 'dropped' ? 'dropped' : 'done'} ${ago(now - s.doneAt)}` : s.startedAt ? `started ${ago(now - s.startedAt)}` : 'not started'
+  const when = s.doneAt ? (s.status === 'dropped' ? T.droppedAgo : T.doneAgo)(ago(now - s.doneAt)) : s.startedAt ? T.startedAgo(ago(now - s.startedAt)) : T.notStarted
   const lines = [
-    `${n}. ${s.title} (${s.status}, ${when})`,
+    `${n}. ${s.title} (${T.status[s.status] ?? s.status}, ${when})`,
     s.detail ?? '',
-    s.note ? `Result: ${s.note}` : '',
-    isOpen && s.waitingOn ? `Waiting on ${s.waitingOn}${s.waitingFor ? `: ${s.waitingFor}` : ''}` : '',
-    s.addedLate ? `Not in the first plan: ${s.reason ?? 'no reason given'}` : '',
-    s.status === 'dropped' ? `Dropped: ${s.reason ?? 'no reason given'}` : '',
-    s.files.length ? `Files: ${s.files.slice(0, 8).map(baseName).join(', ')}${s.files.length > 8 ? ` +${s.files.length - 8}` : ''}` : '',
-    'What do you want to do?',
+    s.note ? T.result(s.note) : '',
+    isOpen && s.waitingOn ? T.waitingOn(s.waitingOn, s.waitingFor) : '',
+    s.addedLate ? T.notInFirstPlan(s.reason ?? T.noReason) : '',
+    s.status === 'dropped' ? T.droppedBecause(s.reason ?? T.noReason) : '',
+    s.files.length ? T.files(`${s.files.slice(0, 8).map(baseName).join(', ')}${s.files.length > 8 ? ` +${s.files.length - 8}` : ''}`) : '',
+    T.whatToDo,
   ]
   const options: MenuOption[] = []
   if (s.status === 'done') {
-    options.push({ label: 'Recap it (side answer)', kind: 'side', prompt: `In a few lines, recap ${name}: what changed, what we decided, and anything left open.` })
-    options.push({ label: 'Mark not done', kind: 'mark' })
+    options.push({ label: T.recap, kind: 'side', prompt: T.pRecap(name) })
+    options.push({ label: T.markNotDone, kind: 'mark' })
   } else if (s.status === 'dropped') {
-    options.push({ label: 'Bring it back', kind: 'main', prompt: `Bring back ${name} (dropped: ${quoted(s.reason ?? 'no reason given')}). Put it back in the plan and say where it fits.` })
-    options.push({ label: 'Why dropped? (side answer)', kind: 'side', prompt: `In a few lines: why was ${name} dropped, and does anything still depend on it?` })
+    options.push({ label: T.bringBack, kind: 'main', prompt: T.pBringBack(name, quoted(s.reason ?? T.noReason)) })
+    options.push({ label: T.whyDropped, kind: 'side', prompt: T.pWhyDropped(name) })
   } else {
     const open = trail.steps.filter(x => x.status !== 'done' && x.status !== 'dropped')
     const first = open[0]
-    if (s.waitingOn === 'you') options.push({ label: 'I did my part', kind: 'main', prompt: `Done on my side: ${quoted(s.waitingFor ?? s.title)}. Continue with ${name}.` })
-    else if (s.status === 'doing' || first === s) options.push({ label: 'Continue this step', kind: 'main', prompt: `Finish ${name}, then stop and tell me where we are. Update the Wayfinder plan as you go.` })
+    if (s.waitingOn === 'you') options.push({ label: T.didMyPart, kind: 'main', prompt: T.pDidMyPart(quoted(s.waitingFor ?? s.title), name) })
+    else if (s.status === 'doing' || first === s) options.push({ label: T.continueStep, kind: 'main', prompt: T.pContinue(name) })
     else {
       const from = first ? trail.steps.indexOf(first) + 1 : n
-      options.push({ label: 'Work up to here', kind: 'main', prompt: `Work through the plan up to ${name} (steps ${from} to ${n}), then stop there and tell me where we are. Update the Wayfinder plan as you go.` })
+      options.push({ label: T.workUpTo, kind: 'main', prompt: T.pWorkUpTo(name, from, n) })
     }
-    options.push({ label: 'Explain it (side answer)', kind: 'side', prompt: `In a few lines: what does ${name} involve, why is it in the plan, and what is left before it is done?` })
-    options.push({ label: 'Mark done', kind: 'mark' })
+    options.push({ label: T.explain, kind: 'side', prompt: T.pExplain(name) })
+    options.push({ label: T.markDone, kind: 'mark' })
   }
-  return { header: `Step ${n}`, question: lines.filter(Boolean).join('\n'), options }
+  return { header: T.stepHeader(n), question: lines.filter(Boolean).join('\n'), options }
 }
 
 /** Text from git (names, commit subjects) as one short quoted string: newlines escaped, 80 characters at most. */
@@ -397,10 +398,10 @@ export function quoted(s: string): string {
 
 export function ago(ms: number): string {
   const m = Math.floor(ms / 60000)
-  if (m < 1) return 'just now'
-  if (m < 60) return `${m}m ago`
+  if (m < 1) return T.justNow
+  if (m < 60) return T.minutesAgo(m)
   const h = Math.floor(m / 60)
-  return h < 24 ? `${h}h ago` : `${Math.floor(h / 24)}d ago`
+  return h < 24 ? T.hoursAgo(h) : T.daysAgo(Math.floor(h / 24))
 }
 
 export function repoName(root: string): string {

@@ -5,6 +5,7 @@ import type { RepoLive, Seen, Trail, TrailEvent } from '../types'
 import { git, isAncestor, repoGraph, repoRoot, snapshot } from './gitgraph'
 import { graphLanes, graphText, isPhaseOpen, phaseState } from './graph'
 import type { GraphRow, GraphView, RowLabel } from './graph'
+import { langOf, setLang, T } from './i18n'
 import {
   ago,
   applyPlan,
@@ -303,9 +304,9 @@ async function openRow($: $, id: string): Promise<void> {
     const hash = id.slice('commit:'.length)
     const c = (await read($, repos)).flatMap(r => r.graph?.commits ?? []).find(x => x.hash === hash)
     if (!c) return
-    const question = `${hash.slice(0, 10)} ${c.subject}\n${ago((await $.clock.now()) - c.at)}\nWhat do you want to do?`
-    const explain: MenuOption = { label: 'Explain it (side answer)', kind: 'side', prompt: `In a few lines: what did commit ${hash.slice(0, 7)} ("${c.subject}") change, and how does it fit the plan?` }
-    const choice = await ask($, question, 'Commit', [explain.label, 'Close'])
+    const question = `${hash.slice(0, 10)} ${c.subject}\n${ago((await $.clock.now()) - c.at)}\n${T.whatToDo}`
+    const explain: MenuOption = { label: T.explain, kind: 'side', prompt: T.pExplainCommit(hash.slice(0, 7), c.subject) }
+    const choice = await ask($, question, T.commitHeader, [explain.label, T.close])
     if (choice === explain.label) await act($, explain, `Commit ${hash.slice(0, 7)}`)
   }
 }
@@ -315,7 +316,7 @@ async function draft($: $, text: string): Promise<void> {
   const box = await $.prompt.read()
   const hasDraft = box.text.trim() !== ''
   const { isFilled } = await $.prompt.fill({ text: hasDraft ? `\n${text}` : text, mode: hasDraft ? 'append' : 'replace' })
-  $.ui.toast(isFilled ? 'Ready in the message box: read it, then press Enter to send.' : 'Could not reach the message box.')
+  $.ui.toast(isFilled ? T.draftReady : T.draftFailed)
 }
 
 async function closeAside($: $): Promise<void> {
@@ -347,9 +348,9 @@ async function act($: $, option: MenuOption, title: string): Promise<void> {
     await draft($, option.prompt)
     return
   }
-  await update($, aside, () => ({ title: `${option.label.replace(/ \(side answer\)$/, '')}: ${title}`, isLoading: true }))
+  await update($, aside, () => ({ title: `${option.label.endsWith(T.sideSuffix) ? option.label.slice(0, -T.sideSuffix.length) : option.label}: ${title}`, isLoading: true }))
   const reply = await $.model.fork({ prompt: option.prompt, effort: 'low' })
-  const text = reply.isAnswered ? reply.text : `No answer (${reply.reason}).`
+  const text = reply.isAnswered ? reply.text : T.noAnswer(reply.reason)
   await update($, aside, cur => (cur ? { ...cur, text, isLoading: false } : cur))
 }
 
@@ -379,6 +380,10 @@ export const register: Register = on => {
     const now = await $.clock.now()
     const stored = (await $.store.get(PREFIX + sessionId)) as Trail | undefined
     await update($, trail, () => stored ?? emptyTrail(sessionId, now))
+    // French when Claude Code's `language` setting names it; English for any other language or none.
+    const language = await $.settings.read({ key: 'language' }).catch(err => (note(`language setting unreadable: ${String(err).slice(0, 120)}`), undefined))
+    setLang(langOf(language))
+    note(`language: ${langOf(language)} (setting: ${JSON.stringify(language ?? null)})`)
     paused = (await $.store.get(PAUSED_KEY)) === true
     await registerProgress($)
     await $.tool.register({ name: 'debug', description: "Returns Wayfinder's recent diagnostics: what the pane drew, clicks on the graph and how they were handled. Read-only.", isDeferred: true })
@@ -404,15 +409,15 @@ export const register: Register = on => {
       await registerProgress($)
       if (paused) {
         await $.ui.close({ id: PANE })
-        return { text: 'Wayfinder paused in every session: no git polling, no notes to Claude, no plan tool. /wayfinder start resumes it.' }
+        return { text: T.cmdPaused }
       }
       await $.ui.open({ id: PANE, title: 'Wayfinder' })
       void tick($)
-      return { text: 'Wayfinder resumed.' }
+      return { text: T.cmdResumed }
     }
-    if (arg) return { text: 'Usage: /wayfinder, /wayfinder pause, /wayfinder start' }
+    if (arg) return { text: T.cmdUsage }
     await $.ui.open({ id: PANE, title: 'Wayfinder' })
-    return { text: 'Wayfinder pane opened.' }
+    return { text: T.cmdOpened }
   })
 
   // Read-only: what the diagnostics recorded, for finding where a click is lost.
@@ -486,8 +491,8 @@ export const register: Register = on => {
     const open = await read($, expanded)
     const side = await read($, aside)
     const now = await $.clock.now()
-    if (paused) return <Text dimColor>Wayfinder is paused. Type /wayfinder start to resume.</Text>
-    if (!t) return <Text dimColor>Starting…</Text>
+    if (paused) return <Text dimColor>{T.paused}</Text>
+    if (!t) return <Text dimColor>{T.starting}</Text>
 
     // A commit another session recorded as its own gets that session's name.
     const ownerOf = new Map<string, string>()
@@ -517,7 +522,7 @@ export const register: Register = on => {
         note(`drew ${r.name} on ${e.surface}: ${g.rows.length} rows, lanes ${g.width}px wide`)
         return [
           <Svg source={g.legend.source} alt={`Branches of ${r.name}`} width={g.legend.width} height={g.legend.height} />,
-          ...(r.graph?.skipped ? [<Text dimColor>+{r.graph.skipped} older commits not shown</Text>] : []),
+          ...(r.graph?.skipped ? [<Text dimColor>{T.olderCommits(r.graph.skipped)}</Text>] : []),
           ...g.rows.filter(row => row.height > 0).map(row => rowOf(r, g, row)),
         ]
       }
@@ -572,15 +577,15 @@ export const register: Register = on => {
       <Box flexDirection="column" gap={1} padding={1}>
         {waiting.length > 0 && (
           <Box flexDirection="column" borderStyle="round" borderColor="warning" paddingX={1}>
-            <Text weight="semibold" color="warning">Waiting on you · {waiting.length}</Text>
+            <Text weight="semibold" color="warning">{T.waitingOnYou} · {waiting.length}</Text>
             {/* Grouped by session: its name on one dim line, then a bullet per step, what to do under it. */}
-            {[...new Set(waiting.map(w => (w.isSelf ? 'This session' : w.session)))].map(name => (
+            {[...new Set(waiting.map(w => (w.isSelf ? T.thisSession : w.session)))].map(name => (
               <Box flexDirection="column" marginTop={1}>
                 <Text dimColor wrap="truncate">
                   {name}
                 </Text>
                 {waiting
-                  .filter(w => (w.isSelf ? 'This session' : w.session) === name)
+                  .filter(w => (w.isSelf ? T.thisSession : w.session) === name)
                   .map(w => (
                     <Box flexDirection="column" paddingLeft={1}>
                       <Text wrap="truncate">
@@ -600,13 +605,17 @@ export const register: Register = on => {
 
         {away && (
           <Box flexDirection="column" borderStyle="round" borderColor="suggestion" paddingX={1}>
-            <Text weight="semibold">Since you left ({away.away} ago)</Text>
+            <Text weight="semibold">{T.sinceYouLeft(away.away)}</Text>
             {away.lines.map(l => (
               <Text dimColor>· {l}</Text>
             ))}
-            {away.next && <Text>Next: {away.next}</Text>}
+            {away.next && (
+              <Text>
+                {T.next} {away.next}
+              </Text>
+            )}
             <Box flexDirection="row">
-              <Button key="away-ok" plain label="Got it" onPress={() => void dismissAway($)} />
+              <Button key="away-ok" plain label={T.gotIt} onPress={() => void dismissAway($)} />
             </Box>
           </Box>
         )}
@@ -615,21 +624,21 @@ export const register: Register = on => {
           {/* Each line says what it is: the goal, where the work stands, and whether the plan is behind. */}
           {t.goal && (
             <Text size="caption" dimColor weight="semibold">
-              GOAL
+              {T.goal}
             </Text>
           )}
-          <Text size="heading" weight="semibold">{t.goal ?? 'No plan yet'}</Text>
+          <Text size="heading" weight="semibold">{t.goal ?? T.noPlan}</Text>
           {t.whereWasI && (
             <Text dimColor>
-              <Text weight="semibold">Where we are: </Text>
+              <Text weight="semibold">{T.whereWeAre}</Text>
               {t.whereWasI}
             </Text>
           )}
-          {!t.goal && <Text dimColor>Claude records the plan here once the work has several steps.</Text>}
+          {!t.goal && <Text dimColor>{T.planHint}</Text>}
           {isStale && (
             <Text color="warning">
-              <Text weight="semibold">Plan is behind: </Text>
-              last updated {since} turn(s) ago{t.commitsSincePlan ? `, ${t.commitsSincePlan} commit(s) since` : ''}.
+              <Text weight="semibold">{T.planBehind}</Text>
+              {T.lastUpdated(since, t.commitsSincePlan)}
             </Text>
           )}
         </Box>
@@ -638,27 +647,27 @@ export const register: Register = on => {
           <Box flexDirection="column" borderStyle="round" paddingX={1}>
             <Text weight="semibold">
               {side.title}
-              <Text dimColor weight="regular"> · side answer, not in the chat</Text>
+              <Text dimColor weight="regular">{T.sideAnswer}</Text>
             </Text>
-            <Text dimColor={side.isLoading}>{side.isLoading ? 'Thinking…' : side.text}</Text>
+            <Text dimColor={side.isLoading}>{side.isLoading ? T.thinking : side.text}</Text>
             {!side.isLoading && (
               <Box flexDirection="row">
-                <Button key="aside-close" plain dimColor label="Close" onPress={() => void closeAside($)} />
+                <Button key="aside-close" plain dimColor label={T.close} onPress={() => void closeAside($)} />
               </Box>
             )}
           </Box>
         )}
 
-        {lives.length === 0 && <Text dimColor>No git repo touched yet.</Text>}
+        {lives.length === 0 && <Text dimColor>{T.noRepo}</Text>}
         {lives.map(r => (
           <Box flexDirection="column">
             <Text weight="semibold">
               {r.name} · {r.branch}
               <Text dimColor weight="regular">
-                {r.base && !r.base.endsWith(r.branch) ? ` from ${r.base}` : ''}
-                {r.behindBase ? ` · ${r.behindBase} behind` : ''}
-                {r.ahead !== undefined ? ` · ↑${r.ahead} ↓${r.behind}` : ' · not pushed'}
-                {r.graph?.hidden ? ` · ${r.graph.hidden} other branches hidden` : ''}
+                {r.base && !r.base.endsWith(r.branch) ? T.fromBase(r.base) : ''}
+                {r.behindBase ? T.behind(r.behindBase) : ''}
+                {r.ahead !== undefined ? ` · ↑${r.ahead} ↓${r.behind}` : T.notPushed}
+                {r.graph?.hidden ? T.branchesHidden(r.graph.hidden) : ''}
               </Text>
             </Text>
             <Box flexDirection="column">{graphOf(r)}</Box>
@@ -667,7 +676,8 @@ export const register: Register = on => {
 
         {t.unplannedFiles.length > 0 && (
           <Text color="warning">
-            Edited while no step was current: {t.unplannedFiles.slice(-5).map(baseName).join(', ')}
+            {T.unplanned}
+            {t.unplannedFiles.slice(-5).map(baseName).join(', ')}
             {t.unplannedFiles.length > 5 ? ` +${t.unplannedFiles.length - 5}` : ''}
           </Text>
         )}
@@ -675,7 +685,7 @@ export const register: Register = on => {
         {rest.length > 0 && (
           <Box flexDirection="column">
             <Box flexDirection="row">
-              <Button key="others-toggle" plain dimColor label={`${showOthers ? '▾' : '▸'} ${rest.length} other session${rest.length === 1 ? '' : 's'}`} onPress={() => void togglePhase($, OTHERS_KEY, showOthers)} />
+              <Button key="others-toggle" plain dimColor label={`${showOthers ? '▾' : '▸'} ${T.otherSessions(rest.length)}`} onPress={() => void togglePhase($, OTHERS_KEY, showOthers)} />
             </Box>
             {showOthers &&
               rest.map(o => {
@@ -683,8 +693,8 @@ export const register: Register = on => {
                 const n = c ? o.steps.indexOf(c) + 1 : 0
                 return (
                   <Text dimColor>
-                    {o.goal ?? '(no plan yet)'} · {Object.keys(o.seen).map(repoName).join(', ') || 'no repo'}
-                    {c ? ` · step ${n}/${o.steps.length}: ${c.title}` : ''} · {ago(now - o.updatedAt)}
+                    {o.goal ?? T.noPlanYet} · {Object.keys(o.seen).map(repoName).join(', ') || T.noRepoShort}
+                    {c ? T.stepNofM(n, o.steps.length, c.title) : ''} · {ago(now - o.updatedAt)}
                   </Text>
                 )
               })}

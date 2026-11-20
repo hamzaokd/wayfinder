@@ -13,6 +13,7 @@ test('preview', async ($, on) => {
   const repo = { head: H('c'), log: '' }
   mock.store(on)
   const dialogs = captureDialogs(on)
+  on('settings.read', () => ({ value: { language: /*LANG*/ 'english' } }))
   const clock = mock.clock(on, { now: 1_800_000_000_000 })
   on('process.run', (_, e) => {
     const a = e.argv.slice(GIT.length).join(' ')

@@ -3,6 +3,7 @@
   py dev/preview.py                  a sample session (dev/preview.tsx)
   py dev/preview.py --live [id]      this machine's real state: a saved session's plan (the most
                                      recently updated one unless an id is given) and its real git
+  add --fr                           as with Claude Code's language setting on French
 
 Runs the session through the mod's test kit, takes the pane's render tree and paints it in HTML at
 the pane's width; clicks on phase headers fold them and a step shows its dialog, as recorded. An approximation of the desktop app's painting: layout logic shows, the app's
@@ -18,7 +19,7 @@ STORE_DIR = pathlib.Path.home() / '.claude' / 'plugins' / 'store'
 
 def run_kit(source: str) -> dict[str, str]:
     """Runs one test file through the kit; returns its PREVIEW and ASKED lines."""
-    TMP.write_text(source, encoding='utf-8')
+    TMP.write_text(source.replace("/*LANG*/ 'english'", "'french'" if '--fr' in sys.argv else "'english'"), encoding='utf-8')
     shutil.copy(ROOT / 'dev' / 'dump.ts', DUMP)
     try:
         out = subprocess.run(['claude', 'plugin', 'test', '.'], cwd=ROOT, capture_output=True, text=True, encoding='utf-8', shell=sys.platform == 'win32')
@@ -59,7 +60,7 @@ def live(session: str | None) -> str:
 
 
 if '--live' in sys.argv:
-    rest = sys.argv[sys.argv.index('--live') + 1:]
+    rest = [a for a in sys.argv[sys.argv.index('--live') + 1:] if a != '--fr']
     tree = live(rest[0] if rest else None)
 else:
     tree = run_kit((ROOT / 'dev' / 'preview.tsx').read_text(encoding='utf-8'))['PREVIEW']
