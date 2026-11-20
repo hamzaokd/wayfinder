@@ -302,6 +302,35 @@ export function rebuildFromHistory(trail: Trail, uses: readonly (ToolUseLite & {
   return out.planVersion === 0 ? trail : attributeEdits(out, uses, roots)
 }
 
+/** Files this session edited that another session, active in the last day, edited too. */
+export type Overlap = { sessionId: string; session: string; files: string[] }
+
+const OVERLAP_MS = 24 * 3_600_000
+
+/**
+ * A trail's edited files, keyed by repo folder name and repo-relative path, so two checkouts of
+ * a repo at the same folder name match. shortcut: worktrees of one repo under different folder
+ * names are not matched; compare by git's common dir if that matters.
+ */
+function editedFiles(t: Trail): Map<string, string> {
+  const roots = Object.keys(t.seen)
+  const out = new Map<string, string>()
+  for (const f of [...t.steps.flatMap(s => s.files), ...t.unplannedFiles]) {
+    const root = roots.find(r => f.startsWith(`${r}/`))
+    const rel = root ? f.slice(root.length + 1) : f
+    out.set(root ? `${repoName(root)}:${rel}` : f, rel)
+  }
+  return out
+}
+
+export function sharedFiles(self: Trail, others: readonly Trail[], now: number): Overlap[] {
+  const mine = editedFiles(self)
+  return others
+    .filter(o => now - o.updatedAt < OVERLAP_MS)
+    .map(o => ({ sessionId: o.sessionId, session: o.goal ?? T.anotherSession, files: [...editedFiles(o).keys()].filter(k => mine.has(k)).map(k => mine.get(k)!) }))
+    .filter(o => o.files.length > 0)
+}
+
 export type WaitingItem ={ session: string; isSelf: boolean; step: string; what?: string }
 
 /** Every open step, in every session, that waits on the user. */
