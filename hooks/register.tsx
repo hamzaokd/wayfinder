@@ -1,5 +1,5 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register } from 'claude-code'
+import type { EngineInterface, PluginOptions, Register } from 'claude-code'
 
 import type { RepoLive, Seen, Trail, TrailEvent } from '../types'
 import { git, isAncestor, repoGraph, repoRoot, snapshot } from './gitgraph'
@@ -35,7 +35,6 @@ const PANE = 'wayfinder'
 // Bump the prefix (and the atoms' shapes) when Trail's fields change.
 const PREFIX = 'trail2:'
 const TICK_MS = 15_000
-const OTHERS_DAYS = 7
 
 const trail = atom({ plugin: 'wayfinder', key: 'trail' } as const, null, { shape: 'trail-2' })
 const repos = atom({ plugin: 'wayfinder', key: 'repos' } as const, [], { shape: 'repos-2' })
@@ -45,6 +44,10 @@ const expanded = atom({ plugin: 'wayfinder', key: 'expanded' } as const, {}, { s
 const aside = atom({ plugin: 'wayfinder', key: 'aside' } as const, null, { shape: 'aside-1' })
 // The pane's language; the pane reads it, so a change redraws it.
 const langNow = atom({ plugin: 'wayfinder', key: 'lang' } as const, 'en', { shape: 'lang-1' })
+// The plugin's own settings (manifest userConfig): read at load, changed from the pane's Settings block.
+const settings = atom({ plugin: 'wayfinder', key: 'settings' } as const, { autoStart: false, othersDays: 7, maxOthers: 8 }, { shape: 'settings-1' })
+type Settings = { autoStart: boolean; othersDays: number; maxOthers: number }
+const SETTINGS_KEY = '__settings'
 // Shared by every session: /wayfinder-lang's choice, and the other sessions /wayfinder-forget hid (id -> its updatedAt then).
 const LANG_KEY = 'lang'
 const FORGOTTEN_KEY = 'forgotten'
@@ -123,15 +126,23 @@ const rootOf = new Map<string, string | null>()
 // Files another session also edits that Claude was already told about, as `sessionId\0file`.
 // shortcut: kept in memory, so after a reload each overlap is told once more; keep it in the trail if that grates.
 const warned = new Set<string>()
-// Paused by /wayfinder-pause, for every session: one key in the shared store.
-const PAUSED_KEY = 'paused'
-let paused = false
+// Read once at load: the engine passes the manifest's userConfig values, defaults filled in.
+let options: Settings = { autoStart: false, othersDays: 7, maxOthers: 8 }
 
-/** While paused the plan tool waits behind ToolSearch with a one-line description, so it costs almost nothing. */
-function registerProgress($: $): Promise<unknown> {
-  return paused
-    ? $.tool.register({ name: 'progress', description: 'Wayfinder is paused (the user resumes it with /wayfinder-start). Do not call.', inputSchema: INPUT_SCHEMA, isDeferred: true })
-    : $.tool.register({ name: 'progress', description: DESCRIPTION, inputSchema: INPUT_SCHEMA, isDeferred: false })
+/** Wayfinder is off in a session until /wayfinder, except in one that already has a plan, or when autoStart is set. */
+function isOn(t: Trail | null | undefined, autoStart: boolean): boolean {
+  return !!t && (t.isOn ?? (t.planVersion > 0 || autoStart))
+}
+
+/** While off the plan tool waits behind ToolSearch with a one-line description, so it costs almost nothing. */
+function registerProgress($: $, active: boolean): Promise<unknown> {
+  return active
+    ? $.tool.register({ name: 'progress', description: DESCRIPTION, inputSchema: INPUT_SCHEMA, isDeferred: false })
+    : $.tool.register({ name: 'progress', description: 'Wayfinder is off in this session (the user turns it on with /wayfinder). Do not call.', inputSchema: INPUT_SCHEMA, isDeferred: true })
+}
+
+async function active($: $): Promise<boolean> {
+  return isOn(await read($, trail), (await read($, settings)).autoStart)
 }
 const newRoots = new Set<string>()
 
@@ -251,12 +262,13 @@ async function refreshOthers($: $): Promise<void> {
   const all = await Promise.all(keys.map(k => $.store.get(k)))
   // A session hidden by /wayfinder-forget comes back once it moves again.
   const forgotten = ((await $.store.get(FORGOTTEN_KEY)) ?? {}) as Record<string, number>
+  const { othersDays } = await read($, settings)
+  // Sessions where Wayfinder is off are kept too: their edited files feed the shared-file warning.
   const list = (all as Trail[])
     // A value that isn't a trail (hand-edited, half-written) is left out of the list, not repaired.
-    .filter(t => t && Array.isArray(t.steps) && Array.isArray(t.events) && now - t.updatedAt < OTHERS_DAYS * 86_400_000)
+    .filter(t => t && Array.isArray(t.steps) && Array.isArray(t.events) && now - t.updatedAt < othersDays * 86_400_000)
     .filter(t => !((forgotten[t.sessionId] ?? -1) >= t.updatedAt))
     .sort((a, b) => b.updatedAt - a.updatedAt)
-    .slice(0, 8)
   if (JSON.stringify(await read($, others)) !== JSON.stringify(list)) await update($, others, () => list)
 }
 
@@ -276,11 +288,8 @@ async function applyLang($: $): Promise<void> {
 
 async function tick($: $): Promise<void> {
   try {
-    // Another session may have paused or resumed it.
-    const was = paused
-    paused = (await $.store.get(PAUSED_KEY)) === true
-    if (paused !== was) await registerProgress($)
-    if (paused) return
+    // Off: no polling. Its edits are still recorded at the end of each turn, from the transcript.
+    if (!(await active($))) return
     // Another session may have changed the language with /wayfinder-lang.
     await applyLang($)
     await refreshOthers($)
@@ -407,14 +416,53 @@ async function rebuild($: $, now: number): Promise<void> {
   await save($, cur => rebuildFromHistory(cur, uses, roots, now))
 }
 
+/** /wayfinder and the pane's Turn on button: on in this session, and a plan asked for once when there is none. */
+async function turnOn($: $): Promise<boolean> {
+  const t = await read($, trail)
+  if (!t) return false
+  const needsPlan = t.steps.length === 0
+  await save($, cur => ({
+    ...cur,
+    isOn: true,
+    pending: needsPlan
+      ? [...cur.pending, `The user just turned Wayfinder on in this session. Call ${PROGRESS_TOOL} now, before anything else, with the plan of the work in this conversation so far: the steps already done, the one in progress, and what is next. Then carry on with the user's message.`].slice(-10)
+      : cur.pending,
+    // Asked for here; the soft nudge must not ask again.
+    hasNudged: cur.hasNudged || needsPlan,
+  }))
+  await registerProgress($, true)
+  await $.ui.open({ id: PANE, title: 'Wayfinder' })
+  void tick($)
+  return needsPlan
+}
+
+/** Changes one of the plugin's settings where Claude Code keeps it (settings.json, shown in /config). */
+async function setOption<K extends keyof Settings>($: $, field: K, value: Settings[K]): Promise<void> {
+  // The row's key is `<plugin>.<field>`; the plugin's name depends on how it was installed, so it is looked up.
+  const row = (await $.config.list()).find(r => r.key.endsWith(`.${field}`) && r.provider.plugin.startsWith('wayfinder'))
+  const res = row ? await $.config.set({ key: row.key, value }) : { deny: `no setting named ${field}` }
+  if ('deny' in res && res.deny) {
+    note(`setting ${field} refused: ${res.deny}`)
+    $.ui.toast(T.setFailed(res.deny))
+    return
+  }
+  // shortcut: other open sessions read the new value at their next load (/reload-plugins); watch config.set if that grates.
+  await update($, settings, cur => ({ ...cur, [field]: value }))
+  if (field === 'othersDays') await refreshOthers($)
+}
+
 async function dismissAway($: $): Promise<void> {
   const now = await $.clock.now()
   await save($, cur => ({ ...cur, lastPromptAt: now }))
 }
 
-export const register: Register = on => {
+export const register: Register = (on, opts: PluginOptions) => {
+  // Validated against the manifest's types before the module loads.
+  options = { autoStart: opts.autoStart === true, othersDays: Number(opts.othersDays), maxOthers: Number(opts.maxOthers) }
+
   on('session.start', async ($, e, next) => {
     const started = await next(e)
+    await update($, settings, () => options)
     sessionId = await $.session.id()
     const kept = await $.store.get(DIAG_KEY + sessionId)
     if (Array.isArray(kept) && diag.length === 0) diag.push(...kept.filter((l): l is string => typeof l === 'string').slice(-40))
@@ -424,22 +472,24 @@ export const register: Register = on => {
     await update($, trail, () => stored ?? emptyTrail(sessionId, now))
     // French when Claude Code's `language` setting names it; English for any other language or none.
     await applyLang($)
-    paused = (await $.store.get(PAUSED_KEY)) === true
-    await registerProgress($)
     await $.tool.register({ name: 'debug', description: "Returns Wayfinder's recent diagnostics: what the pane drew, clicks on the graph and how they were handled. Read-only.", isDeferred: true })
     // One command per action, so typing /wayfinder lists them all (a mod's command names can't hold ':').
-    await $.command.register({ name: 'wayfinder', description: 'Open the Wayfinder pane: plan, branch graph and what waits on you' })
-    await $.command.register({ name: 'wayfinder-pause', description: 'Pause Wayfinder in every session: no git polling, no notes to Claude, plan tool hidden' })
-    await $.command.register({ name: 'wayfinder-start', description: 'Resume Wayfinder after /wayfinder-pause' })
+    await $.command.register({ name: 'wayfinder', description: 'Turn Wayfinder on in this session and open its pane: plan, branch graph and what waits on you' })
+    await $.command.register({ name: 'wayfinder-off', description: 'Turn Wayfinder off in this session: no pane, no plan tool, no notes to Claude' })
     await $.command.register({ name: 'wayfinder-forget', description: 'Hide the other sessions now listed until they move again (their saved plans stay)' })
     await $.command.register({ name: 'wayfinder-lang', description: "The pane's language in every session: fr, en, or auto (Claude Code's language setting)", argumentHint: 'fr|en|auto' })
-    if (!paused) void $.ui.open({ id: PANE, title: 'Wayfinder' })
     const cwd = normPath(e.cwd)
     await track($, cwd)
     cwdRoot = rootOf.get(cwd) ?? undefined
     // A failed rebuild leaves the plan empty and says so; it must not stop the git refresh below.
     // "No plan" rather than "nothing saved": a fork opened before this rebuild existed saved an empty one.
     if (!stored || stored.planVersion === 0) await rebuild($, now).catch(err => $.ui.status(`wayfinder: could not rebuild the plan from this conversation: ${String(err).slice(0, 80)}`))
+    // After the rebuild: a conversation that already used Wayfinder stays on. Settled once, so changing
+    // the autoStart setting later only reaches sessions started after it.
+    const isActive = await active($)
+    if ((await read($, trail))?.isOn === undefined) await save($, cur => ({ ...cur, isOn: isActive }))
+    await registerProgress($, isActive)
+    if (isActive) void $.ui.open({ id: PANE, title: 'Wayfinder' })
     // Anything that happened while the session was closed counts as outside.
     void tick($)
     $.clock.every(TICK_MS, () => void tick($))
@@ -448,16 +498,18 @@ export const register: Register = on => {
 
   on('command.run', { command: 'wayfinder' }, async ($, e) => {
     if (e.args.trim()) return { text: T.cmdUsage }
-    await $.ui.open({ id: PANE, title: 'Wayfinder' })
-    return { text: T.cmdOpened }
+    if (await active($)) {
+      await $.ui.open({ id: PANE, title: 'Wayfinder' })
+      return { text: T.cmdOpened }
+    }
+    return { text: (await turnOn($)) ? T.cmdOnAsk : T.cmdOn }
   })
 
-  on('command.run', { command: 'wayfinder-pause' }, async $ => {
-    paused = true
-    await $.store.set(PAUSED_KEY, true)
-    await registerProgress($)
+  on('command.run', { command: 'wayfinder-off' }, async $ => {
+    await save($, cur => ({ ...cur, isOn: false }))
+    await registerProgress($, false)
     await $.ui.close({ id: PANE })
-    return { text: T.cmdPaused }
+    return { text: T.cmdOff }
   })
 
   on('command.run', { command: 'wayfinder-forget' }, async $ => {
@@ -478,21 +530,12 @@ export const register: Register = on => {
     return { text: arg === 'auto' ? T.cmdLangAuto : T.cmdLang }
   })
 
-  on('command.run', { command: 'wayfinder-start' }, async $ => {
-    paused = false
-    await $.store.set(PAUSED_KEY, false)
-    await registerProgress($)
-    await $.ui.open({ id: PANE, title: 'Wayfinder' })
-    void tick($)
-    return { text: T.cmdResumed }
-  })
-
   // Read-only: what the diagnostics recorded, for finding where a click is lost.
   // A RegExp: the generated tool-name types can predate this tool.
   on('tool.call', { tool: /^mcp__wayfinder__debug$/ }, async () => ({ result: diag.length ? diag.join('\n') : 'nothing recorded yet' }))
 
   on('tool.call', { tool: PROGRESS_TOOL }, async ($, e) => {
-    if (paused) return { deny: 'Wayfinder is paused; the user resumes it with /wayfinder-start. Carry on without it.' }
+    if (!(await active($))) return { deny: 'Wayfinder is off in this session; the user turns it on with /wayfinder. Carry on without it.' }
     const ctx = await planCtx($)
     const input = e as unknown as PlanInput
     try {
@@ -507,7 +550,7 @@ export const register: Register = on => {
   })
 
   on('prompt.submit', async ($, e, next) => {
-    if (e.command || e.isMeta || paused) return next(e)
+    if (e.command || e.isMeta || !(await active($))) return next(e)
     isInTurn = true
     await sync($, 'outside')
     const t = await read($, trail)
@@ -540,7 +583,8 @@ export const register: Register = on => {
 
   on('turn.complete', async ($, e, next) => {
     const done = await next(e)
-    if (e.agentId !== undefined || paused) return done
+    // Runs while off too: the edited files it records cost no tokens and keep other sessions' warnings right.
+    if (e.agentId !== undefined) return done
     const t = await read($, trail)
     const msgs = await $.session.messages(t?.lastMsgUuid ? { after: t.lastMsgUuid } : { last: 40 })
     if (!('deny' in msgs)) {
@@ -567,16 +611,28 @@ export const register: Register = on => {
     const open = await read($, expanded)
     const side = await read($, aside)
     const now = await $.clock.now()
-    if (paused) return <Text dimColor>{T.paused}</Text>
+    const set = await read($, settings)
     if (!t) return <Text dimColor>{T.starting}</Text>
+    if (!isOn(t, set.autoStart))
+      return (
+        <Box flexDirection="column" gap={1} padding={1}>
+          <Text weight="semibold">{T.off}</Text>
+          <Text dimColor>{T.offHint}</Text>
+          <Box flexDirection="row">
+            <Button key="turn-on" label={T.turnOn} onPress={() => void turnOn($)} />
+          </Box>
+        </Box>
+      )
+    // Listed: other sessions where Wayfinder is on. All of them still count for shared files.
+    const listed = rest.filter(o => isOn(o, set.autoStart)).slice(0, set.maxOthers)
 
     // A commit another session recorded as its own gets that session's name.
     const ownerOf = new Map<string, string>()
     for (const o of rest) for (const ev of o.events) if (ev.kind === 'commit' && ev.origin === 'session' && ev.hash) ownerOf.set(ev.hash, o.goal ?? 'another session')
 
-    const waiting = waitingOnYou(t, rest)
+    const waiting = waitingOnYou(t, listed)
     const shared = sharedFiles(t, rest, now)
-    const away =sinceYouLeft(t, rest, lives.flatMap(r => r.graph?.stashes ?? []), now)
+    const away = sinceYouLeft(t, listed, lives.flatMap(r => r.graph?.stashes ?? []), now)
     const since = t.turn - t.planTurn
     // The goal is reached once every step still in the plan is done.
     const isAchieved = t.steps.some(s => s.status === 'done') && t.steps.every(s => s.status === 'done' || s.status === 'dropped')
@@ -585,6 +641,14 @@ export const register: Register = on => {
     const cur = currentStep(t.steps)
     const showOthers = open[OTHERS_KEY] ?? false
     const showLegend = open[LEGEND_KEY] ?? false
+    const showSettings = open[SETTINGS_KEY] ?? false
+    const stepper = (key: string, label: string, value: number, min: number, max: number, field: 'othersDays' | 'maxOthers') => (
+      <Box flexDirection="row" gap={1}>
+        <Text dimColor>{label}</Text>
+        <Button key={`${key}-less`} plain label="−" onPress={() => void setOption($, field, Math.max(min, value - 1))} />
+        <Button key={`${key}-more`} plain label="+" onPress={() => void setOption($, field, Math.min(max, value + 1))} />
+      </Box>
+    )
     const legend = showLegend && Svg ? legendSvg() : undefined
 
     const labelParts = (l: RowLabel) => [
@@ -798,13 +862,13 @@ export const register: Register = on => {
           </Text>
         )}
 
-        {rest.length > 0 && (
+        {listed.length > 0 && (
           <Box flexDirection="column">
             <Box flexDirection="row">
-              <Button key="others-toggle" plain dimColor label={`${showOthers ? '▾' : '▸'} ${T.otherSessions(rest.length)}`} onPress={() => void togglePhase($, OTHERS_KEY, showOthers)} />
+              <Button key="others-toggle" plain dimColor label={`${showOthers ? '▾' : '▸'} ${T.otherSessions(listed.length)}`} onPress={() => void togglePhase($, OTHERS_KEY, showOthers)} />
             </Box>
             {showOthers &&
-              rest.map(o => {
+              listed.map(o => {
                 const c = currentStep(o.steps)
                 const n = c ? stepNo(o, c) : ''
                 return (
@@ -816,6 +880,24 @@ export const register: Register = on => {
               })}
           </Box>
         )}
+
+        {/* The plugin's settings, the same ones settings.json and /config hold; folded until asked for. */}
+        <Box flexDirection="column">
+          <Box flexDirection="row">
+            <Button key="settings-toggle" plain dimColor label={`${showSettings ? '▾' : '▸'} ${T.settings}`} onPress={() => void togglePhase($, SETTINGS_KEY, showSettings)} />
+          </Box>
+          {showSettings && (
+            <Box flexDirection="column" paddingLeft={2}>
+              <Box flexDirection="row" gap={1}>
+                <Text dimColor>{T.setAutoStart}</Text>
+                <Button key="set-autostart" plain label={set.autoStart ? T.yes : T.no} onPress={() => void setOption($, 'autoStart', !set.autoStart)} />
+              </Box>
+              {stepper('set-days', T.setDays(set.othersDays), set.othersDays, 1, 60, 'othersDays')}
+              {stepper('set-max', T.setMax(set.maxOthers), set.maxOthers, 1, 30, 'maxOthers')}
+              <Text dimColor size="caption">{T.setNote}</Text>
+            </Box>
+          )}
+        </Box>
       </Box>
     )
   })

@@ -9,7 +9,7 @@ import { captureDialogs, dump } from './zz-dump'
 const H = (c: string) => c.repeat(40)
 const MIN = 60_000
 
-test('preview', async ($, on) => {
+test('preview', { options: { autoStart: /*AUTOSTART*/ true } }, async ($, on) => {
   const repo = { head: H('c'), log: '' }
   mock.store(on)
   const dialogs = captureDialogs(on)

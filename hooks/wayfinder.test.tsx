@@ -216,7 +216,8 @@ test('the pane: the graph, clicks on it, the dialog, and where actions go', asyn
   on('session.id', () => ({ value: 's1' }))
   on('tool.register', () => ({ value: { tool: PROGRESS_TOOL } }))
   on('command.register', (_, e) => ({ value: { command: e.name } }))
-  on('ui.open', () => ({ value: { isPlaced: true } }))
+  let opened = 0
+  on('ui.open', () => (opened++, { value: { isPlaced: true } }))
   on('ui.close', () => ({ value: undefined }))
   on('ui.status', () => ({ value: undefined }))
   on('ui.toast', () => ({ value: undefined }))
@@ -250,6 +251,26 @@ test('the pane: the graph, clicks on it, the dialog, and where actions go', asyn
 
   await $.session.start({ cwd: 'C:/r', surface: 'desktop', isInteractive: true })
   await clock.advance(16_000)
+  const run = async (command: string, args = '') => (await $.command.run({ command, args, origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } })).text
+
+  // Off by default: no pane, the plan tool refuses, nothing reaches Claude.
+  expect(opened).toBe(0)
+  const off = await $.tool.call({ tool: PROGRESS_TOOL, phases: [] })
+  expect('deny' in off && off.deny).toContain('off in this session')
+  await $.prompt.submit({ text: 'hi', wait: false, origin: { kind: 'composer' } })
+  expect(seenContext).toEqual([])
+  {
+    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    expect(await ui.find({ type: 'Text', text: /Wayfinder is off in this session/ })).toBeTruthy()
+    await ui.unmount()
+  }
+  // /wayfinder turns it on, opens the pane, and the next message asks for the plan so far, once.
+  expect(await run('wayfinder')).toContain('asks Claude to record the plan of the work so far')
+  expect(opened).toBe(1)
+  await $.prompt.submit({ text: 'go on', wait: false, origin: { kind: 'composer' } })
+  expect(seenContext.join('\n')).toContain('The user just turned Wayfinder on in this session.')
+  await $.prompt.submit({ text: 'and?', wait: false, origin: { kind: 'composer' } })
+  expect(seenContext).toEqual([])
 
   const saved = await $.tool.call({
     tool: PROGRESS_TOOL,
@@ -326,21 +347,24 @@ test('the pane: the graph, clicks on it, the dialog, and where actions go', asyn
     await ui.unmount()
   }
 
-  // Paused: no notes to Claude, the plan tool refuses, the pane says so; start brings it all back.
-  expect((await $.command.run({ command: 'wayfinder-pause', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } })).text).toContain('paused')
+  // Off again: no notes to Claude, the plan tool refuses, the pane says so; /wayfinder brings it all back.
+  expect(await run('wayfinder-off')).toContain('Wayfinder is off in this session')
   repo.log = `${H('c')}\tanother`
   repo.head = H('c')
   seenContext = []
   await $.prompt.submit({ text: 'hi', wait: false, origin: { kind: 'composer' } })
   expect(seenContext).toEqual([])
   const refused = await $.tool.call({ tool: PROGRESS_TOOL, phases: [] })
-  expect('deny' in refused && refused.deny).toContain('paused')
+  expect('deny' in refused && refused.deny).toContain('off in this session')
   const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
-  expect(await ui.find({ type: 'Text', text: /Wayfinder is paused/ })).toBeTruthy()
+  expect(await ui.find({ key: 'turn-on' })).toBeTruthy()
+  // The plan is there already: turning on asks for nothing.
+  await ui.press({ key: 'turn-on' })
+  expect(await ui.find({ type: 'Text', text: /^Add CSV export$/ })).toBeTruthy()
   await ui.unmount()
-  expect((await $.command.run({ command: 'wayfinder-start', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } })).text).toBe('Wayfinder resumed.')
   await $.prompt.submit({ text: 'and now?', wait: false, origin: { kind: 'composer' } })
-  expect(seenContext.join('\n')).toContain('1 new commit(s) outside this session')
+  // The commit landed while off; the turn-on refresh files it (as this turn's, since no turn ended in the test).
+  expect(seenContext.join('\n')).toContain('1 commit(s) since')
 })
 
 test('a session with no saved plan rebuilds it from its own conversation', () => {
@@ -384,7 +408,7 @@ test('a fork opens with the plan its conversation carries', async ($, on) => {
   await ui.unmount()
 })
 
-test('the pane follows a French language setting, and is English otherwise', async ($, on) => {
+test('the pane follows a French language setting, and is English otherwise', { options: { autoStart: true } }, async ($, on) => {
   expect(['french', 'Français', 'fr', 'fr-FR', 'francais'].map(langOf)).toEqual(['fr', 'fr', 'fr', 'fr', 'fr'])
   expect(['english', 'japanese', 'frisian', '', undefined, 42].map(langOf)).toEqual(['en', 'en', 'en', 'en', 'en', 'en'])
 
@@ -418,7 +442,7 @@ test('phase blocks keep the plan order even when a later phase started first', (
   expect(list.flatMap(i => (i.kind === 'phase' ? [i.title] : []))).toEqual(['A', 'B'])
 })
 
-test('the goal says it is achieved once every step is done', async ($, on) => {
+test('the goal says it is achieved once every step is done', { options: { autoStart: true } }, async ($, on) => {
   mock.store(on)
   mock.clock(on, { now: 1_000_000 })
   fakeGit(on, { head: H('a'), log: '' })
@@ -521,7 +545,7 @@ test('/wayfinder-forget hides other sessions until they move; /wayfinder-lang sw
   await ui.unmount()
 })
 
-test('the legend unfolds under the timeline and draws every mark', async ($, on) => {
+test('the legend unfolds under the timeline and draws every mark', { options: { autoStart: true } }, async ($, on) => {
   mock.store(on)
   const clock = mock.clock(on, { now: 1_000_000 })
   fakeGit(on, { head: H('a'), log: '' })
@@ -541,5 +565,43 @@ test('the legend unfolds under the timeline and draws every mark', async ($, on)
   const source = String((await legend())?.props.source)
   for (const mark of ['done-fill', 'doing-ring', 'todo-ring', 'blocked-fill', 'diamond-open', 'decision', 'stash', 'dirty', 'rail-todo', 'lg-current', 'lg-done', 'lg-future']) expect(source).toContain(mark)
   expect(source).toContain('Doing: you are here')
+  await ui.unmount()
+})
+
+test('settings: the pane changes them through Claude Code settings, and a refused change says so', { options: { autoStart: true, maxOthers: 1 } }, async ($, on) => {
+  mock.store(on)
+  const clock = mock.clock(on, { now: 1_000_000 })
+  fakeGit(on, { head: H('a'), log: '' })
+  on('session.id', () => ({ value: 'set-1' }))
+  on('session.messages', () => ({ value: [] }))
+  on('tool.register', () => ({ value: { tool: PROGRESS_TOOL } }))
+  on('command.register', (_, e) => ({ value: { command: e.name } }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('ui.status', () => ({ value: undefined }))
+  let toast = ''
+  on('ui.toast', (_, e) => ((toast = String(e.text)), { value: undefined }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  const rows: Record<string, unknown> = { 'wayfinder.autoStart': true, 'wayfinder.othersDays': 7, 'wayfinder.maxOthers': 1 }
+  const engine = { plugin: 'engine', tier: 'core' } as const
+  const provider = { plugin: 'wayfinder', tier: 'user' } as const
+  on('config.list', () => ({ value: Object.entries(rows).map(([key, value]) => ({ key, label: key, kind: typeof value === 'boolean' ? 'boolean' : 'number', value, provider, isLocked: false })) }) as never)
+  let refuse = false
+  on('config.set', (_, e) => (refuse ? { deny: 'locked by policy' } : ((rows[e.key] = e.value), { value: e.value })) as never)
+  void engine
+  await $.session.start({ cwd: 'C:/r', surface: 'desktop', isInteractive: true })
+  await clock.advance(16_000)
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  await ui.press({ key: 'settings-toggle' })
+  expect(await ui.find({ type: 'Text', text: /List at most 1 other sessions/ })).toBeTruthy()
+  await ui.press({ key: 'set-max-more' })
+  expect(rows['wayfinder.maxOthers']).toBe(2)
+  expect(await ui.find({ type: 'Text', text: /List at most 2 other sessions/ })).toBeTruthy()
+  await ui.press({ key: 'set-autostart' })
+  expect(rows['wayfinder.autoStart']).toBe(false)
+  refuse = true
+  await ui.press({ key: 'set-days-less' })
+  expect(toast).toBe('Setting not saved: locked by policy')
+  expect(rows['wayfinder.othersDays']).toBe(7)
+  expect(await ui.find({ type: 'Text', text: /last 7 days/ })).toBeTruthy()
   await ui.unmount()
 })

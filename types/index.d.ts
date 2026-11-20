@@ -70,6 +70,8 @@ export type Trail = {
   lastRepo?: string
   /** Files edited while no step was current. */
   unplannedFiles: string[]
+  /** Wayfinder on in this session (/wayfinder, /wayfinder-off). Unset: on when it has a plan, else the autoStart setting. */
+  isOn?: boolean
 }
 
 export type Lane = {
@@ -114,6 +116,7 @@ declare module 'claude-code' {
       expanded: Shaped<Record<string, boolean>>
       aside: Shaped<{ title: string; text?: string; isLoading: boolean } | null>
       lang: Shaped<'en' | 'fr'>
+      settings: Shaped<{ autoStart: boolean; othersDays: number; maxOthers: number }>
     }
   }
 }

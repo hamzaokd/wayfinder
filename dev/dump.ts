@@ -34,11 +34,12 @@ export async function dump(ui: any, dialogs: { last?: Dialog }): Promise<void> {
     }
     for (const k of flipped) await ui.press({ key: k })
   }
-  // The legend, unfolded from the first state.
-  if ((await keys()).includes('legend-toggle')) {
-    await ui.press({ key: 'legend-toggle' })
-    trees['legend-toggle'] = await ui.find({ type: 'Box' })
-    await ui.press({ key: 'legend-toggle' })
+  // The legend and the settings, each unfolded from the first state.
+  for (const k of ['legend-toggle', 'settings-toggle']) {
+    if (!(await keys()).includes(k)) continue
+    await ui.press({ key: k })
+    trees[k] = await ui.find({ type: 'Box' })
+    await ui.press({ key: k })
   }
   console.log('PREVIEW ' + JSON.stringify({ trees, asks }))
 }
