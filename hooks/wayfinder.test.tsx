@@ -144,6 +144,8 @@ test('the graph puts steps on their branch, folds finished phases, and plans the
   expect(shown).toContain('▾ Build · step 1 of 1')
   expect(shown).toContain('2. Writer · you are here')
   expect(shown).toContain('Merge into main (planned)')
+  // Each row knows its phase and how far along it is: the pane draws a block per phase.
+  expect(g.rows.filter(r => r.label?.id?.startsWith('phase:')).map(r => `${r.phase}:${r.state}`)).toEqual(['Investigate:done', 'Build:current', 'Ship:future'])
   expect(shown.some(x => x.startsWith('fix/login · also edits auth.ts'))).toBe(true)
   // Phases, steps and labelled commits are clickable (the folded phase's commit is a bare dot).
   expect(g.rows.flatMap(r => r.label?.id ?? [])).toEqual(['phase:Investigate', 'phase:Build', 'step:Writer', 'commit:' + H('b'), 'commit:' + H('l'), 'commit:' + H('m'), 'phase:Ship', 'step:PR'])
@@ -214,6 +216,7 @@ test('the pane: the graph, clicks on it, the dialog, and where actions go', asyn
   on('tool.register', () => ({ value: { tool: PROGRESS_TOOL } }))
   on('command.register', () => ({ value: { command: 'wayfinder' } }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('ui.close', () => ({ value: undefined }))
   on('ui.status', () => ({ value: undefined }))
   on('ui.toast', () => ({ value: undefined }))
   on('prompt.read', () => ({ value: { text: '', cursor: 0 } }))
@@ -310,8 +313,26 @@ test('the pane: the graph, clicks on it, the dialog, and where actions go', asyn
     expect(forked).toContain('what does step 3 "Open PR" involve')
     expect(await ui.find({ type: 'Text', text: /It streams rows to stay under 200 MB\./ })).toBeTruthy()
     await ui.press({ key: 'aside-close' })
+    // Each phase is a tinted block behind its rows.
+    if (surface === 'desktop') expect(JSON.stringify(await ui.find({ type: 'Box' }))).toContain('rgba(68,147,248,0.12)')
     await ui.unmount()
   }
+
+  // Paused: no notes to Claude, the plan tool refuses, the pane says so; start brings it all back.
+  expect((await $.command.run({ command: 'wayfinder', args: 'pause', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } })).text).toContain('paused')
+  repo.log = `${H('c')}\tanother`
+  repo.head = H('c')
+  seenContext = []
+  await $.prompt.submit({ text: 'hi', wait: false, origin: { kind: 'composer' } })
+  expect(seenContext).toEqual([])
+  const refused = await $.tool.call({ tool: PROGRESS_TOOL, phases: [] })
+  expect('deny' in refused && refused.deny).toContain('paused')
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  expect(await ui.find({ type: 'Text', text: /Wayfinder is paused/ })).toBeTruthy()
+  await ui.unmount()
+  expect((await $.command.run({ command: 'wayfinder', args: 'start', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } })).text).toBe('Wayfinder resumed.')
+  await $.prompt.submit({ text: 'and now?', wait: false, origin: { kind: 'composer' } })
+  expect(seenContext.join('\n')).toContain('1 new commit(s) outside this session')
 })
 
 test('a session with no saved plan rebuilds it from its own conversation', () => {

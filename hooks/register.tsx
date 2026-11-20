@@ -4,7 +4,7 @@ import type { EngineInterface, Register } from 'claude-code'
 import type { RepoLive, Seen, Trail, TrailEvent } from '../types'
 import { git, isAncestor, repoGraph, repoRoot, snapshot } from './gitgraph'
 import { graphLanes, graphText, isPhaseOpen, phaseState } from './graph'
-import type { GraphView, RowLabel } from './graph'
+import type { GraphRow, GraphView, PhaseState, RowLabel } from './graph'
 import {
   ago,
   applyPlan,
@@ -41,6 +41,18 @@ const expanded = atom({ plugin: 'wayfinder', key: 'expanded' } as const, {}, { s
 // A side question's answer, shown in the pane and never added to the chat (like /btw).
 const aside = atom({ plugin: 'wayfinder', key: 'aside' } as const, null, { shape: 'aside-1' })
 const OTHERS_KEY = '__others'
+// Phase blocks: a faint tint that reads on light and dark.
+const BLOCK: Record<PhaseState, string> = { current: 'rgba(68,147,248,0.12)', done: 'rgba(63,185,80,0.08)', future: 'rgba(141,150,160,0.07)' }
+/** Rows in runs of one phase: each run is drawn as one block. */
+function runsOf(rows: readonly GraphRow[]): GraphRow[][] {
+  const runs: GraphRow[][] = []
+  for (const row of rows) {
+    const last = runs.at(-1)
+    if (last && last[0]!.phase === row.phase) last.push(row)
+    else runs.push([row])
+  }
+  return runs
+}
 // Row ids each repo's graph drew last time: what is new on the next draw animates in.
 const drawnRows = new Map<string, Set<string>>()
 // The last diagnostics, newest last. Saved with the session on each refresh, so a reload keeps them.
@@ -99,6 +111,16 @@ let cwdRoot: string | undefined
 let isInTurn = false
 let lock: Promise<unknown> = Promise.resolve()
 const rootOf = new Map<string, string | null>()
+// Paused by /wayfinder pause, for every session: one key in the shared store.
+const PAUSED_KEY = 'paused'
+let paused = false
+
+/** While paused the plan tool waits behind ToolSearch with a one-line description, so it costs almost nothing. */
+function registerProgress($: $): Promise<unknown> {
+  return paused
+    ? $.tool.register({ name: 'progress', description: 'Wayfinder is paused (the user resumes it with /wayfinder start). Do not call.', inputSchema: INPUT_SCHEMA, isDeferred: true })
+    : $.tool.register({ name: 'progress', description: DESCRIPTION, inputSchema: INPUT_SCHEMA, isDeferred: false })
+}
 const newRoots = new Set<string>()
 
 /** One sync at a time: the timer and the turn hooks both call it. */
@@ -225,6 +247,11 @@ async function refreshOthers($: $): Promise<void> {
 
 async function tick($: $): Promise<void> {
   try {
+    // Another session may have paused or resumed it.
+    const was = paused
+    paused = (await $.store.get(PAUSED_KEY)) === true
+    if (paused !== was) await registerProgress($)
+    if (paused) return
     await refreshOthers($)
     await sync($, isInTurn ? 'session' : 'outside')
     await $.store.set(DIAG_KEY + sessionId, diag)
@@ -364,10 +391,11 @@ export const register: Register = on => {
     const now = await $.clock.now()
     const stored = (await $.store.get(PREFIX + sessionId)) as Trail | undefined
     await update($, trail, () => stored ?? emptyTrail(sessionId, now))
-    await $.tool.register({ name: 'progress', description: DESCRIPTION, inputSchema: INPUT_SCHEMA, isDeferred: false })
+    paused = (await $.store.get(PAUSED_KEY)) === true
+    await registerProgress($)
     await $.tool.register({ name: 'debug', description: "Returns Wayfinder's recent diagnostics: what the pane drew, clicks on the graph and how they were handled. Read-only.", isDeferred: true })
-    await $.command.register({ name: 'wayfinder', description: 'Open the Wayfinder pane: plan, branch graph and what waits on you' })
-    void $.ui.open({ id: PANE, title: 'Wayfinder' })
+    await $.command.register({ name: 'wayfinder', description: 'Open the Wayfinder pane: plan, branch graph and what waits on you', argumentHint: '[pause|start]' })
+    if (!paused) void $.ui.open({ id: PANE, title: 'Wayfinder' })
     const cwd = normPath(e.cwd)
     await track($, cwd)
     cwdRoot = rootOf.get(cwd) ?? undefined
@@ -380,7 +408,21 @@ export const register: Register = on => {
     return started
   })
 
-  on('command.run', { command: 'wayfinder' }, async $ => {
+  on('command.run', { command: 'wayfinder' }, async ($, e) => {
+    const arg = e.args.trim()
+    if (arg === 'pause' || arg === 'start') {
+      paused = arg === 'pause'
+      await $.store.set(PAUSED_KEY, paused)
+      await registerProgress($)
+      if (paused) {
+        await $.ui.close({ id: PANE })
+        return { text: 'Wayfinder paused in every session: no git polling, no notes to Claude, no plan tool. /wayfinder start resumes it.' }
+      }
+      await $.ui.open({ id: PANE, title: 'Wayfinder' })
+      void tick($)
+      return { text: 'Wayfinder resumed.' }
+    }
+    if (arg) return { text: 'Usage: /wayfinder, /wayfinder pause, /wayfinder start' }
     await $.ui.open({ id: PANE, title: 'Wayfinder' })
     return { text: 'Wayfinder pane opened.' }
   })
@@ -390,6 +432,7 @@ export const register: Register = on => {
   on('tool.call', { tool: /^mcp__wayfinder__debug$/ }, async () => ({ result: diag.length ? diag.join('\n') : 'nothing recorded yet' }))
 
   on('tool.call', { tool: PROGRESS_TOOL }, async ($, e) => {
+    if (paused) return { deny: 'Wayfinder is paused; the user resumes it with /wayfinder start. Carry on without it.' }
     const ctx = await planCtx($)
     const input = e as unknown as PlanInput
     try {
@@ -404,7 +447,7 @@ export const register: Register = on => {
   })
 
   on('prompt.submit', async ($, e, next) => {
-    if (e.command || e.isMeta) return next(e)
+    if (e.command || e.isMeta || paused) return next(e)
     isInTurn = true
     await sync($, 'outside')
     const t = await read($, trail)
@@ -429,7 +472,7 @@ export const register: Register = on => {
 
   on('turn.complete', async ($, e, next) => {
     const done = await next(e)
-    if (e.agentId !== undefined) return done
+    if (e.agentId !== undefined || paused) return done
     const t = await read($, trail)
     const msgs = await $.session.messages(t?.lastMsgUuid ? { after: t.lastMsgUuid } : { last: 40 })
     if (!('deny' in msgs)) {
@@ -455,6 +498,7 @@ export const register: Register = on => {
     const open = await read($, expanded)
     const side = await read($, aside)
     const now = await $.clock.now()
+    if (paused) return <Text dimColor>Wayfinder is paused. Type /wayfinder start to resume.</Text>
     if (!t) return <Text dimColor>Starting…</Text>
 
     // A commit another session recorded as its own gets that session's name.
@@ -486,26 +530,37 @@ export const register: Register = on => {
         return [
           <Svg source={g.legend.source} alt={`Branches of ${r.name}`} width={g.legend.width} height={g.legend.height} />,
           ...(r.graph?.skipped ? [<Text dimColor>+{r.graph.skipped} older commits not shown</Text>] : []),
-          ...g.rows.map(row => {
-            const l = row.label
-            const id = l?.id
-            return (
-              <Box key={`row-${r.name}-${row.key}`} flexDirection="row" alignItems="center">
-                <Svg source={g.slice(row)} alt={l?.text ?? 'commit'} width={g.width} height={row.height} />
-                {l && id ? (
-                  <Button key={`press-${r.name}-${row.key}`} label={l.text} plain hover={{ underline: true }} onPress={() => void openRow($, id)}>
-                    {labelParts(l)}
-                  </Button>
-                ) : (
-                  l && <Text wrap="truncate">{labelParts(l)}</Text>
-                )}
-              </Box>
-            )
-          }),
+          // A phase is a block: a tinted band behind its rows. A background, not a border, so the lanes stay joined.
+          ...runsOf(g.rows).map(run => (
+            <Box flexDirection="column" backgroundColor={run[0]!.state ? BLOCK[run[0]!.state] : undefined}>
+              {run.map(row => rowOf(r, g, row))}
+            </Box>
+          )),
         ]
       }
-      // The terminal: each line that names a step, phase or commit is a button.
-      return graphText(view).map((line, i) => {
+      return textGraph(r, view)
+    }
+
+    const rowOf = (r: RepoLive, g: ReturnType<typeof graphLanes>, row: GraphRow) => {
+      const l = row.label
+      const id = l?.id
+      return (
+        <Box key={`row-${r.name}-${row.key}`} flexDirection="row" alignItems="center">
+          {Svg && <Svg source={g.slice(row)} alt={l?.text ?? 'commit'} width={g.width} height={row.height} />}
+          {l && id ? (
+            <Button key={`press-${r.name}-${row.key}`} label={l.text} plain hover={{ underline: true }} onPress={() => void openRow($, id)}>
+              {labelParts(l)}
+            </Button>
+          ) : (
+            l && <Text wrap="truncate">{labelParts(l)}</Text>
+          )}
+        </Box>
+      )
+    }
+
+    // The terminal: each line that names a step, phase or commit is a button.
+    const textGraph = (r: RepoLive, view: GraphView) =>
+      graphText(view).map((line, i) => {
         const text = (
           <Text mono color={line.color} dimColor={line.dim}>
             {line.text}
@@ -520,7 +575,6 @@ export const register: Register = on => {
           text
         )
       })
-    }
 
     return (
       <Box flexDirection="column" gap={1} padding={1}>

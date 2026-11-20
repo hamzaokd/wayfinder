@@ -15,7 +15,7 @@ export type GraphView = {
   ownerOf: ReadonlyMap<string, string>
 }
 
-type PhaseState = 'done' | 'current' | 'future'
+export type PhaseState = 'done' | 'current' | 'future'
 
 export type Item = { t: number; o: number; lane: number; phase?: string } & (
   | { kind: 'commit'; c: GraphCommit; tag?: string; isOwn: boolean; isCompact: boolean; label?: string }
@@ -188,7 +188,7 @@ export function rowLabel(v: GraphView, it: Item): RowLabel | undefined {
 }
 
 /** One row of the timeline: its band of the lane drawing, in pixels, and its text. */
-export type GraphRow = { key: string; top: number; height: number; label?: RowLabel }
+export type GraphRow = { key: string; top: number; height: number; label?: RowLabel; phase?: string; state?: PhaseState }
 
 const ROW_H = 26
 const COMPACT_H = 10
@@ -255,7 +255,7 @@ export function graphLanes(v: GraphView, seen?: ReadonlySet<string>): { width: n
     const y = top + height / 2
     ys[k] = y
     const key = rowKey(it)
-    rows.push({ key, top, height, label })
+    rows.push({ key, top, height, label, phase: it.phase, state: it.phase === undefined ? undefined : phaseState(v.trail.steps.filter(s => s.phase === it.phase)) })
     const x = laneX(it.lane)
     const lane = lanes[it.lane]
     const op = lane ? lane.relevance : 1
