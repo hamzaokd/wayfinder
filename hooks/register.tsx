@@ -117,14 +117,14 @@ const rootOf = new Map<string, string | null>()
 // Files another session also edits that Claude was already told about, as `sessionId\0file`.
 // shortcut: kept in memory, so after a reload each overlap is told once more; keep it in the trail if that grates.
 const warned = new Set<string>()
-// Paused by /wayfinder pause, for every session: one key in the shared store.
+// Paused by /wayfinder-pause, for every session: one key in the shared store.
 const PAUSED_KEY = 'paused'
 let paused = false
 
 /** While paused the plan tool waits behind ToolSearch with a one-line description, so it costs almost nothing. */
 function registerProgress($: $): Promise<unknown> {
   return paused
-    ? $.tool.register({ name: 'progress', description: 'Wayfinder is paused (the user resumes it with /wayfinder start). Do not call.', inputSchema: INPUT_SCHEMA, isDeferred: true })
+    ? $.tool.register({ name: 'progress', description: 'Wayfinder is paused (the user resumes it with /wayfinder-start). Do not call.', inputSchema: INPUT_SCHEMA, isDeferred: true })
     : $.tool.register({ name: 'progress', description: DESCRIPTION, inputSchema: INPUT_SCHEMA, isDeferred: false })
 }
 const newRoots = new Set<string>()
@@ -404,7 +404,10 @@ export const register: Register = on => {
     paused = (await $.store.get(PAUSED_KEY)) === true
     await registerProgress($)
     await $.tool.register({ name: 'debug', description: "Returns Wayfinder's recent diagnostics: what the pane drew, clicks on the graph and how they were handled. Read-only.", isDeferred: true })
-    await $.command.register({ name: 'wayfinder', description: 'Open the Wayfinder pane: plan, branch graph and what waits on you', argumentHint: '[pause|start]' })
+    // One command per action, so typing /wayfinder lists them all (a mod's command names can't hold ':').
+    await $.command.register({ name: 'wayfinder', description: 'Open the Wayfinder pane: plan, branch graph and what waits on you' })
+    await $.command.register({ name: 'wayfinder-pause', description: 'Pause Wayfinder in every session: no git polling, no notes to Claude, plan tool hidden' })
+    await $.command.register({ name: 'wayfinder-start', description: 'Resume Wayfinder after /wayfinder-pause' })
     if (!paused) void $.ui.open({ id: PANE, title: 'Wayfinder' })
     const cwd = normPath(e.cwd)
     await track($, cwd)
@@ -419,22 +422,26 @@ export const register: Register = on => {
   })
 
   on('command.run', { command: 'wayfinder' }, async ($, e) => {
-    const arg = e.args.trim()
-    if (arg === 'pause' || arg === 'start') {
-      paused = arg === 'pause'
-      await $.store.set(PAUSED_KEY, paused)
-      await registerProgress($)
-      if (paused) {
-        await $.ui.close({ id: PANE })
-        return { text: T.cmdPaused }
-      }
-      await $.ui.open({ id: PANE, title: 'Wayfinder' })
-      void tick($)
-      return { text: T.cmdResumed }
-    }
-    if (arg) return { text: T.cmdUsage }
+    if (e.args.trim()) return { text: T.cmdUsage }
     await $.ui.open({ id: PANE, title: 'Wayfinder' })
     return { text: T.cmdOpened }
+  })
+
+  on('command.run', { command: 'wayfinder-pause' }, async $ => {
+    paused = true
+    await $.store.set(PAUSED_KEY, true)
+    await registerProgress($)
+    await $.ui.close({ id: PANE })
+    return { text: T.cmdPaused }
+  })
+
+  on('command.run', { command: 'wayfinder-start' }, async $ => {
+    paused = false
+    await $.store.set(PAUSED_KEY, false)
+    await registerProgress($)
+    await $.ui.open({ id: PANE, title: 'Wayfinder' })
+    void tick($)
+    return { text: T.cmdResumed }
   })
 
   // Read-only: what the diagnostics recorded, for finding where a click is lost.
@@ -442,7 +449,7 @@ export const register: Register = on => {
   on('tool.call', { tool: /^mcp__wayfinder__debug$/ }, async () => ({ result: diag.length ? diag.join('\n') : 'nothing recorded yet' }))
 
   on('tool.call', { tool: PROGRESS_TOOL }, async ($, e) => {
-    if (paused) return { deny: 'Wayfinder is paused; the user resumes it with /wayfinder start. Carry on without it.' }
+    if (paused) return { deny: 'Wayfinder is paused; the user resumes it with /wayfinder-start. Carry on without it.' }
     const ctx = await planCtx($)
     const input = e as unknown as PlanInput
     try {

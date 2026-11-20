@@ -215,7 +215,7 @@ test('the pane: the graph, clicks on it, the dialog, and where actions go', asyn
   fakeGit(on, repo)
   on('session.id', () => ({ value: 's1' }))
   on('tool.register', () => ({ value: { tool: PROGRESS_TOOL } }))
-  on('command.register', () => ({ value: { command: 'wayfinder' } }))
+  on('command.register', (_, e) => ({ value: { command: e.name } }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('ui.close', () => ({ value: undefined }))
   on('ui.status', () => ({ value: undefined }))
@@ -327,7 +327,7 @@ test('the pane: the graph, clicks on it, the dialog, and where actions go', asyn
   }
 
   // Paused: no notes to Claude, the plan tool refuses, the pane says so; start brings it all back.
-  expect((await $.command.run({ command: 'wayfinder', args: 'pause', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } })).text).toContain('paused')
+  expect((await $.command.run({ command: 'wayfinder-pause', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } })).text).toContain('paused')
   repo.log = `${H('c')}\tanother`
   repo.head = H('c')
   seenContext = []
@@ -338,7 +338,7 @@ test('the pane: the graph, clicks on it, the dialog, and where actions go', asyn
   const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
   expect(await ui.find({ type: 'Text', text: /Wayfinder is paused/ })).toBeTruthy()
   await ui.unmount()
-  expect((await $.command.run({ command: 'wayfinder', args: 'start', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } })).text).toBe('Wayfinder resumed.')
+  expect((await $.command.run({ command: 'wayfinder-start', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } })).text).toBe('Wayfinder resumed.')
   await $.prompt.submit({ text: 'and now?', wait: false, origin: { kind: 'composer' } })
   expect(seenContext.join('\n')).toContain('1 new commit(s) outside this session')
 })
@@ -372,7 +372,7 @@ test('a fork opens with the plan its conversation carries', async ($, on) => {
     ],
   }))
   on('tool.register', () => ({ value: { tool: PROGRESS_TOOL } }))
-  on('command.register', () => ({ value: { command: 'wayfinder' } }))
+  on('command.register', (_, e) => ({ value: { command: e.name } }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('ui.status', () => ({ value: undefined }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
@@ -395,7 +395,7 @@ test('the pane follows a French language setting, and is English otherwise', asy
   on('session.id', () => ({ value: 'fr-1' }))
   on('session.messages', () => ({ value: [] }))
   on('tool.register', () => ({ value: { tool: PROGRESS_TOOL } }))
-  on('command.register', () => ({ value: { command: 'wayfinder' } }))
+  on('command.register', (_, e) => ({ value: { command: e.name } }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('ui.status', () => ({ value: undefined }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
@@ -425,7 +425,7 @@ test('the goal says it is achieved once every step is done', async ($, on) => {
   on('session.id', () => ({ value: 'done-1' }))
   on('session.messages', () => ({ value: [] }))
   on('tool.register', () => ({ value: { tool: PROGRESS_TOOL } }))
-  on('command.register', () => ({ value: { command: 'wayfinder' } }))
+  on('command.register', (_, e) => ({ value: { command: e.name } }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('ui.status', () => ({ value: undefined }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
@@ -457,7 +457,7 @@ test('files another session edits too: a card in the pane, and one note to Claud
   fakeGit(on, { head: H('a'), log: '' })
   on('session.id', () => ({ value: 's-ov' }))
   on('tool.register', () => ({ value: { tool: PROGRESS_TOOL } }))
-  on('command.register', () => ({ value: { command: 'wayfinder' } }))
+  on('command.register', (_, e) => ({ value: { command: e.name } }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('ui.status', () => ({ value: undefined }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))

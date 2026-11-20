@@ -31,7 +31,7 @@ const EN = {
   olderCommits: (k: number) => `+${k} older commits not shown`,
   // Pane
   starting: 'Starting…',
-  paused: 'Wayfinder is paused. Type /wayfinder start to resume.',
+  paused: 'Wayfinder is paused. Type /wayfinder-start to resume.',
   waitingOnYou: 'Waiting on you',
   sharedTitle: '⚠ Also edited in another session',
   thisSession: 'This session',
@@ -109,9 +109,9 @@ const EN = {
   pExplain: (name: string) => `In a few lines: what does ${name} involve, why is it in the plan, and what is left before it is done?`,
   pExplainCommit: (hash: string, subject: string) => `In a few lines: what did commit ${hash} ("${subject}") change, and how does it fit the plan?`,
   // Commands
-  cmdPaused: 'Wayfinder paused in every session: no git polling, no notes to Claude, no plan tool. /wayfinder start resumes it.',
+  cmdPaused: 'Wayfinder paused in every session: no git polling, no notes to Claude, no plan tool. /wayfinder-start resumes it.',
   cmdResumed: 'Wayfinder resumed.',
-  cmdUsage: 'Usage: /wayfinder, /wayfinder pause, /wayfinder start',
+  cmdUsage: 'Commands: /wayfinder (open the pane), /wayfinder-pause, /wayfinder-start',
   cmdOpened: 'Wayfinder pane opened.',
 }
 
@@ -138,7 +138,7 @@ const FR: typeof EN = {
   outside: 'extérieur',
   olderCommits: k => `+${k} commits plus anciens masqués`,
   starting: 'Démarrage…',
-  paused: 'Wayfinder est en pause. Tape /wayfinder start pour reprendre.',
+  paused: 'Wayfinder est en pause. Tape /wayfinder-start pour reprendre.',
   waitingOnYou: 'En attente de toi',
   sharedTitle: '⚠ Aussi modifié dans une autre session',
   thisSession: 'Cette session',
@@ -212,9 +212,9 @@ const FR: typeof EN = {
   pWorkUpTo: (name, from, to) => `Avance dans le plan jusqu’à ${name} (étapes ${from} à ${to}), puis arrête-toi et dis-moi où on en est. Mets à jour le plan Wayfinder au fur et à mesure.`,
   pExplain: name => `En quelques lignes : en quoi consiste ${name}, pourquoi est-elle dans le plan, et que reste-t-il avant qu’elle soit faite ?`,
   pExplainCommit: (hash, subject) => `En quelques lignes : qu’a changé le commit ${hash} (« ${subject} »), et comment s’inscrit-il dans le plan ?`,
-  cmdPaused: 'Wayfinder est en pause dans toutes les sessions : plus de lecture git, plus de notes à Claude, plus d’outil de plan. /wayfinder start le relance.',
+  cmdPaused: 'Wayfinder est en pause dans toutes les sessions : plus de lecture git, plus de notes à Claude, plus d’outil de plan. /wayfinder-start le relance.',
   cmdResumed: 'Wayfinder relancé.',
-  cmdUsage: 'Utilisation : /wayfinder, /wayfinder pause, /wayfinder start',
+  cmdUsage: 'Commandes : /wayfinder (ouvrir le panneau), /wayfinder-pause, /wayfinder-start',
   cmdOpened: 'Panneau Wayfinder ouvert.',
 }
 
