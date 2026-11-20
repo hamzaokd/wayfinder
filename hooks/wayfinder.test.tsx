@@ -290,7 +290,11 @@ test('the pane: the graph, clicks on it, the dialog, and where actions go', asyn
       const { height, hits } = layer!.props.props as { height: number; hits: { y1: number; y2: number; id: string }[] }
       const hit = hits.find(h => h.id === id)!
       await ui.resize({ columns: 60, rows: height, in: 'clicks-r' })
-      await ui.pointer({ type: 'down', x: 5, y: Math.floor((hit.y1 + hit.y2) / 2), button: 'left', in: 'clicks-r' })
+      const y = Math.floor((hit.y1 + hit.y2) / 2)
+      // Hovering outlines the row a click would open.
+      await ui.pointer({ type: 'move', x: 5, y, in: 'clicks-r' })
+      expect(await ui.find({ key: 'hover', in: 'clicks-r' })).toBeTruthy()
+      await ui.pointer({ type: 'down', x: 5, y, button: 'left', in: 'clicks-r' })
     }
 
     // The finished phase is folded into one row; a click on it opens it, another folds it.

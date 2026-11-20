@@ -499,8 +499,9 @@ export const register: Register = on => {
           <Box position="relative">
             <Svg source={drawn.source} alt={alt} width={drawn.width} height={drawn.height} />
             {Client && (
-              <Box position="absolute" top={0} left={0} width="100%" height="100%">
-                <Client key={`clicks-${r.name}`} module="./overlay.ts" props={{ height: drawn.height, hits: drawn.hits }} width="100%" height="100%" />
+              // Pinned by all four edges: a 100% height resolved to a single row in the app.
+              <Box position="absolute" top={0} bottom={0} left={0} right={0} flexDirection="column">
+                <Client key={`clicks-${r.name}`} module="./overlay.ts" props={{ height: drawn.height, hits: drawn.hits }} flexGrow={1} />
               </Box>
             )}
           </Box>
