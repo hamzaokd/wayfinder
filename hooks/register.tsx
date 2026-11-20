@@ -513,7 +513,9 @@ export const register: Register = on => {
     const waiting = waitingOnYou(t, rest)
     const away = sinceYouLeft(t, rest, lives.flatMap(r => r.graph?.stashes ?? []), now)
     const since = t.turn - t.planTurn
-    const isStale = t.steps.length > 0 && (since >= 3 || (since >= 1 && t.commitsSincePlan > 0))
+    // The goal is reached once every step still in the plan is done.
+    const isAchieved = t.steps.some(s => s.status === 'done') && t.steps.every(s => s.status === 'done' || s.status === 'dropped')
+    const isStale = !isAchieved && t.steps.length > 0 && (since >= 3 || (since >= 1 && t.commitsSincePlan > 0))
     const primary = primaryRoot(t, lives)
     const cur = currentStep(t.steps)
     const showOthers = open[OTHERS_KEY] ?? false
@@ -636,11 +638,13 @@ export const register: Register = on => {
         <Box flexDirection="column">
           {/* Each line says what it is: the goal, where the work stands, and whether the plan is behind. */}
           {t.goal && (
-            <Text size="caption" dimColor weight="semibold">
-              {T.goal}
+            <Text size="caption" dimColor={!isAchieved} color={isAchieved ? 'success' : undefined} weight="semibold">
+              {isAchieved ? `${T.goal} · ${T.goalAchieved}` : T.goal}
             </Text>
           )}
-          <Text size="heading" weight="semibold">{t.goal ?? T.noPlan}</Text>
+          <Text size="heading" weight="semibold" color={isAchieved ? 'success' : undefined}>
+            {t.goal ?? T.noPlan}
+          </Text>
           {t.whereWasI && (
             <Text dimColor>
               <Text weight="semibold">{T.whereWeAre}</Text>
