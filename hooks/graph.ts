@@ -255,10 +255,13 @@ export function graphLanes(v: GraphView, seen?: ReadonlySet<string>): { width: n
   let top = 0
   let nowY = 0
   const isFresh = (key: string) => seen !== undefined && seen.size > 0 && !seen.has(key)
+  // A folded phase is one row: its commits take no room and draw no dot (its row counts them).
+  const folded = new Set(list.flatMap(it => (it.kind === 'phase' && !it.isOpen ? [it.title] : [])))
 
   list.forEach((it, k) => {
     const label = rowLabel(v, it)
-    const height = it.kind === 'phase' ? PHASE_H : label ? ROW_H : COMPACT_H
+    const isHidden = it.kind === 'commit' && it.phase !== undefined && folded.has(it.phase)
+    const height = isHidden ? 0 : it.kind === 'phase' ? PHASE_H : label ? ROW_H : COMPACT_H
     const y = top + height / 2
     ys[k] = y
     const key = rowKey(it)
@@ -270,7 +273,7 @@ export function graphLanes(v: GraphView, seen?: ReadonlySet<string>): { width: n
     if (it.kind === 'commit') {
       at.set(it.c.hash, { x, y })
       const color = it.tag ? '#BA7517' : laneColor(lanes[it.lane]!, it.lane)
-      row.push(`<circle cx="${x}" cy="${y}" r="${it.isCompact ? 3 : 4.5}" fill="${color}" opacity="${it.tag ? 1 : op}"/>`)
+      if (!isHidden) row.push(`<circle cx="${x}" cy="${y}" r="${it.isCompact ? 3 : 4.5}" fill="${color}" opacity="${it.tag ? 1 : op}"/>`)
       nowY = Math.max(nowY, y)
     } else if (it.kind === 'step') {
       const s = it.s

@@ -276,7 +276,9 @@ test('the pane: the graph, clicks on it, the dialog, and where actions go', asyn
     const ui = await $.ui.mount({ ...PANE, surface })
     expect((await ui.find({ type: 'Text', text: /^Add CSV export$/ }))?.text).toBe('Add CSV export')
     // The waiting card names the step; the graph draws it.
-    expect(await ui.find({ type: 'Text', text: /This session: Benchmark on 1M rows: run it on staging/ })).toBeTruthy()
+    expect(await ui.find({ type: 'Text', text: /^This session$/ })).toBeTruthy()
+    expect(await ui.find({ type: 'Text', text: /^• Benchmark on 1M rows$/ })).toBeTruthy()
+    expect(await ui.find({ type: 'Text', text: /^run it on staging$/ })).toBeTruthy()
     const graph = async () => (await ui.findAll({ type: 'Text' })).map(x => x.text).join('\n')
     expect(await graph()).toContain('2. Benchmark on 1M rows')
     expect(await graph()).toContain(' · waiting on you')

@@ -518,7 +518,7 @@ export const register: Register = on => {
         return [
           <Svg source={g.legend.source} alt={`Branches of ${r.name}`} width={g.legend.width} height={g.legend.height} />,
           ...(r.graph?.skipped ? [<Text dimColor>+{r.graph.skipped} older commits not shown</Text>] : []),
-          ...g.rows.map(row => rowOf(r, g, row)),
+          ...g.rows.filter(row => row.height > 0).map(row => rowOf(r, g, row)),
         ]
       }
       return textGraph(r, view)
@@ -569,12 +569,28 @@ export const register: Register = on => {
       <Box flexDirection="column" gap={1} padding={1}>
         {waiting.length > 0 && (
           <Box flexDirection="column" borderStyle="round" borderColor="warning" paddingX={1}>
-            <Text weight="semibold" color="warning">Waiting on you</Text>
-            {waiting.map(w => (
-              <Text>
-                {w.isSelf ? 'This session' : w.session}: {w.step}
-                {w.what ? `: ${w.what}` : ''}
-              </Text>
+            <Text weight="semibold" color="warning">Waiting on you · {waiting.length}</Text>
+            {/* Grouped by session: its name on one dim line, then a bullet per step, what to do under it. */}
+            {[...new Set(waiting.map(w => (w.isSelf ? 'This session' : w.session)))].map(name => (
+              <Box flexDirection="column" marginTop={1}>
+                <Text dimColor wrap="truncate">
+                  {name}
+                </Text>
+                {waiting
+                  .filter(w => (w.isSelf ? 'This session' : w.session) === name)
+                  .map(w => (
+                    <Box flexDirection="column" paddingLeft={1}>
+                      <Text wrap="truncate">
+                        • <Text weight="semibold">{w.step}</Text>
+                      </Text>
+                      {w.what && (
+                        <Box paddingLeft={2}>
+                          <Text dimColor>{w.what}</Text>
+                        </Box>
+                      )}
+                    </Box>
+                  ))}
+              </Box>
             ))}
           </Box>
         )}
