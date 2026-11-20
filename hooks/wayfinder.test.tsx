@@ -208,7 +208,7 @@ function fakeGit(on: On, repo: { head: string; log: string }) {
   })
 }
 
-test('the pane: the graph, clicks on it, the dialog, and where actions go', async ($, on) => {
+test('the pane: the graph, clicks on it, the dialog, and where actions go', { options: { autoStart: false } }, async ($, on) => {
   const repo = { head: H('a'), log: '' }
   mock.store(on)
   const clock = mock.clock(on, { now: 1_000_000 })
@@ -253,7 +253,7 @@ test('the pane: the graph, clicks on it, the dialog, and where actions go', asyn
   await clock.advance(16_000)
   const run = async (command: string, args = '') => (await $.command.run({ command, args, origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } })).text
 
-  // Off by default: no pane, the plan tool refuses, nothing reaches Claude.
+  // With autoStart off: no pane, the plan tool refuses, nothing reaches Claude.
   expect(opened).toBe(0)
   const off = await $.tool.call({ tool: PROGRESS_TOOL, phases: [] })
   expect('deny' in off && off.deny).toContain('off in this session')

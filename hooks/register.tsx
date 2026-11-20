@@ -45,7 +45,7 @@ const aside = atom({ plugin: 'wayfinder', key: 'aside' } as const, null, { shape
 // The pane's language; the pane reads it, so a change redraws it.
 const langNow = atom({ plugin: 'wayfinder', key: 'lang' } as const, 'en', { shape: 'lang-1' })
 // The plugin's own settings (manifest userConfig): read at load, changed from the pane's Settings block.
-const settings = atom({ plugin: 'wayfinder', key: 'settings' } as const, { autoStart: false, othersDays: 7, maxOthers: 8 }, { shape: 'settings-1' })
+const settings = atom({ plugin: 'wayfinder', key: 'settings' } as const, { autoStart: true, othersDays: 7, maxOthers: 8 }, { shape: 'settings-1' })
 type Settings = { autoStart: boolean; othersDays: number; maxOthers: number }
 const SETTINGS_KEY = '__settings'
 // Shared by every session: /wayfinder-lang's choice, and the other sessions /wayfinder-forget hid (id -> its updatedAt then).
@@ -136,7 +136,7 @@ const DESC_TOKENS = tok(DESCRIPTION + JSON.stringify(INPUT_SCHEMA))
 const kTok = (k: number) => (k < 1000 ? String(k) : `${(k / 1000).toFixed(1)}k`)
 
 // Read once at load: the engine passes the manifest's userConfig values, defaults filled in.
-let options: Settings = { autoStart: false, othersDays: 7, maxOthers: 8 }
+let options: Settings = { autoStart: true, othersDays: 7, maxOthers: 8 }
 
 /** Wayfinder is off in a session until /wayfinder, except in one that already has a plan, or when autoStart is set. */
 function isOn(t: Trail | null | undefined, autoStart: boolean): boolean {
@@ -467,7 +467,7 @@ async function dismissAway($: $): Promise<void> {
 
 export const register: Register = (on, opts: PluginOptions) => {
   // Validated against the manifest's types before the module loads.
-  options = { autoStart: opts.autoStart === true, othersDays: Number(opts.othersDays), maxOthers: Number(opts.maxOthers) }
+  options = { autoStart: opts.autoStart !== false, othersDays: Number(opts.othersDays), maxOthers: Number(opts.maxOthers) }
 
   on('session.start', async ($, e, next) => {
     const started = await next(e)

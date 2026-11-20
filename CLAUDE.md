@@ -35,7 +35,7 @@ user pays tokens for every `/reload-plugins` round trip.
 - Work actions from the pane put a draft in the message box (`$.prompt.fill`) and never send it:
   the text quotes step titles Claude wrote. Questions get a side answer (`$.model.fork`) in the pane.
 - Git text and other sessions' goals reach Claude quoted (`quoted()`) and labelled as data.
-- Off by default per session (`Trail.isOn`, settled at session start). Off costs no tokens: no notes,
+- On by default (`autoStart` setting); `/wayfinder-off` turns a session off (`Trail.isOn`, settled at session start). Off costs no tokens: no notes,
   the tool deferred with a one-line description, no tick. Turn-end edit recording still runs so the
   shared-file warning sees off sessions.
 - Changing Trail's fields: bump `PREFIX` and the atoms' shapes, unless the new field is optional.
