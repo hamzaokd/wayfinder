@@ -102,9 +102,13 @@ export function items(v: GraphView): { list: Item[]; lanes: Lane[]; current: num
     list.push({ kind: 'step', t, o: 1000 + phases.findIndex(p => p.title === s.phase) * 100 + index, lane, phase: s.phase, s, index })
   }
 
+  // A decision whose step left the plan (folded into a summary like "Earlier") and that predates every
+  // phase goes with the next phase that started after it: the work that absorbed it, not the loose commits.
+  const started = phases.filter(p => p.start !== Infinity).sort((a, b) => a.start - b.start)
+  const phaseNear = (t: number) => phaseAt(t) ?? started.find(p => p.start >= t) ?? started.at(-1)
   for (const d of trail.decisions) {
     if (d.repo ? d.repo !== repo.root : !v.isPrimary) continue
-    const phase = trail.steps.find(s => s.title === d.step)?.phase ?? phaseAt(d.at)?.title
+    const phase = trail.steps.find(s => s.title === d.step)?.phase ?? phaseNear(d.at)?.title
     if (phase !== undefined && closed.has(phase)) continue
     list.push({ kind: 'decision', t: d.at, o: 2, lane: laneOfBranch(d.branch), phase, text: d.text, why: d.why })
   }
@@ -149,8 +153,10 @@ export function items(v: GraphView): { list: Item[]; lanes: Lane[]; current: num
     }
   }
   const inPlanOrder = [...groups.keys()].sort((a, b) => trail.phases.indexOf(a) - trail.phases.indexOf(b))
+  // An open phase's header heads its block, even over rows from before the phase started (decisions above).
+  const isHeader = (it: Item) => it.kind === 'phase' && it.isOpen
   let next = 0
-  return { list: slots.flatMap(s => s ?? groups.get(inPlanOrder[next++]!)!), lanes, current }
+  return { list: slots.flatMap(s => s ?? groups.get(inPlanOrder[next++]!)!.sort((a, b) => Number(isHeader(b)) - Number(isHeader(a)))), lanes, current }
 }
 
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')

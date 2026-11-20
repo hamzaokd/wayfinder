@@ -442,6 +442,18 @@ test('phase blocks keep the plan order even when a later phase started first', (
   expect(list.flatMap(i => (i.kind === 'phase' ? [i.title] : []))).toEqual(['A', 'B'])
 })
 
+test('a decision whose step left the plan joins the next phase, under its header', () => {
+  let t = applyPlan(emptyTrail('s1', 0), { phases: plan([['P', 'old', 'doing']]), decisions: [{ text: 'keep it' }] }, ctx(10))
+  t = applyPlan(t, { phases: plan([['P', 'old', 'done']]) }, ctx(15))
+  // A done step left out of a new plan is gone, and so is its phase.
+  t = applyPlan(t,{ phases: plan([['Earlier', 'summary', 'done'], ['Next', 'n1', 'doing']]), change: { reason: 'folded' } }, ctx(20))
+  const view = { trail: t, repo: live(), isPrimary: true, expanded: {}, now: 30, ownerOf: new Map() }
+  expect(items(view).list.some(i => i.kind === 'decision')).toBe(false)
+  const open = items({ ...view, expanded: { Earlier: true } }).list
+  expect(open.slice(0, 2).map(i => i.kind)).toEqual(['phase', 'decision'])
+  expect(open[1]!.phase).toBe('Earlier')
+})
+
 test('the goal says it is achieved once every step is done', { options: { autoStart: true } }, async ($, on) => {
   mock.store(on)
   mock.clock(on, { now: 1_000_000 })
