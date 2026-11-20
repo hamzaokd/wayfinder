@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Wayfinder preview</title>
+<style>
+  :root { --bg: #ffffff; --fg: #1f2328; --dim: #6e7781; --suggestion: #0969da; --success: #1a7f37; --warning: #9a6700; --error: #cf222e; --border: #d0d7de; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #1f1e1d; --fg: #e8e6e3; --dim: #9a968f; --suggestion: #4493f8; --success: #3fb950; --warning: #d29922; --error: #f85149; --border: #3d444d; } }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 13px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+  #pane { width: 480px; border-right: 1px dashed var(--border); min-height: 100vh; }
+  .box { display: flex; min-width: 0; }
+  .text { white-space: pre-wrap; min-width: 0; }
+  .truncate { white-space: pre; overflow: hidden; text-overflow: ellipsis; }
+  .button { cursor: pointer; display: inline-flex; min-width: 0; }
+  .button.boxed { border: 1px solid var(--border); border-radius: 6px; padding: 2px 8px; }
+  img { display: block; flex: none; }
+  .note { font-size: 11px; color: var(--dim); padding: 4px 8px; border-bottom: 1px dashed var(--border); }
+</style>
+</head>
+<body>
+<div id="pane"><div class="note">Preview of the render tree (dev/preview.py). Spacing units drawn as 8px; the app's own painting may differ.</div></div>
+<script>
+const TREE = /*TREE*/null;
+const CELL = 8;
+const color = c => (c && ['suggestion', 'success', 'warning', 'error'].includes(c) ? `var(--${c})` : c);
+const scopes = [];
+function textStyle(el, p) {
+  if (p.color) el.style.color = color(p.color);
+  if (p.dimColor) el.style.color = 'var(--dim)';
+  if (p.bold || p.weight === 'bold') el.style.fontWeight = 700;
+  if (p.weight === 'semibold') el.style.fontWeight = 600;
+  if (p.mono) el.style.fontFamily = 'ui-monospace, Consolas, monospace';
+  if (p.strikethrough) el.style.textDecoration = 'line-through';
+  if (p.underline) el.style.textDecoration = 'underline';
+  if (p.size === 'heading') el.style.fontSize = '16px';
+  if (p.wrap && p.wrap.startsWith('truncate')) el.classList.add('truncate');
+}
+function render(n, hoverScope) {
+  if (n == null || n === false) return document.createTextNode('');
+  if (typeof n === 'string' || typeof n === 'number') return document.createTextNode(String(n));
+  const p = n.props || {};
+  let el;
+  const kids = (n.children || []);
+  if (n.type === 'Box') {
+    el = document.createElement('div');
+    el.className = 'box';
+    el.style.flexDirection = p.flexDirection || 'row';
+    for (const k of ['gap', 'rowGap', 'columnGap']) if (p[k] != null) el.style[k] = p[k] * CELL + 'px';
+    for (const k of ['padding', 'paddingTop', 'paddingBottom', 'paddingLeft', 'paddingRight', 'margin', 'marginTop', 'marginBottom', 'marginLeft', 'marginRight']) if (p[k] != null) el.style[k] = p[k] * CELL + 'px';
+    if (p.paddingX != null) el.style.paddingLeft = el.style.paddingRight = p.paddingX * CELL + 'px';
+    if (p.paddingY != null) el.style.paddingTop = el.style.paddingBottom = p.paddingY * CELL + 'px';
+    if (p.alignItems) el.style.alignItems = p.alignItems;
+    if (p.flexGrow != null) el.style.flexGrow = p.flexGrow;
+    if (p.position) el.style.position = p.position;
+    for (const k of ['top', 'left', 'right', 'bottom']) if (p[k] != null) el.style[k] = p[k] * CELL + 'px';
+    if (p.backgroundColor) el.style.background = color(p.backgroundColor);
+    if (p.borderStyle) { el.style.border = `1px solid ${color(p.borderColor) || 'var(--border)'}`; el.style.borderRadius = '8px'; }
+    if (p.key) hoverScope = el;
+    if (n.hover || p.hover) scopes.push([el, el, n.hover || p.hover]);
+  } else if (n.type === 'Text') {
+    el = document.createElement('span');
+    el.className = 'text';
+    textStyle(el, p);
+  } else if (n.type === 'Button') {
+    el = document.createElement('span');
+    el.className = 'button' + (p.plain ? '' : ' boxed');
+    el.title = 'press: ' + (p.key || p.label);
+    if (!kids.length) el.textContent = p.label;
+    if (n.hover && hoverScope) scopes.push([hoverScope, el, n.hover]);
+  } else if (n.type === 'Svg') {
+    el = document.createElement('img');
+    el.alt = p.alt;
+    el.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(p.source);
+    if (p.width) el.style.width = p.width + 'px';
+    if (p.height) el.style.height = p.height + 'px';
+  } else {
+    el = document.createElement('div');
+    el.textContent = `[${n.type}]`;
+  }
+  for (const c of kids) el.append(render(c, hoverScope));
+  return el;
+}
+document.getElementById('pane').append(render(TREE));
+// Hover: the keyed Box scope lights its Button's label, as the app does.
+for (const [scope, target, h] of scopes) {
+  scope.addEventListener('mouseenter', () => { if (h.underline) target.style.textDecoration = 'underline'; if (h.color) target.style.color = color(h.color); if (h.backgroundColor) target.style.background = color(h.backgroundColor); });
+  scope.addEventListener('mouseleave', () => { target.style.textDecoration = ''; target.style.color = ''; target.style.background = ''; });
+}
+</script>
+</body>
+</html>

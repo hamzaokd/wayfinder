@@ -192,6 +192,9 @@ export type GraphRow = { key: string; top: number; height: number; label?: RowLa
 
 const ROW_H = 26
 const COMPACT_H = 10
+// A phase row is taller: the space above its block keeps phases apart, as in the first drawing.
+const PHASE_H = 36
+const PHASE_GAP = 8
 
 const STYLE = `<style>
   :root { --muted:#6e7781; --line:#d0d7de; --done:#1a7f37; --doing:#0969da; --halo:rgba(9,105,218,.15); --blocked:#cf222e; --bg:#ffffff; --stash:#6e59c9; --decision:#0f7a6a; }
@@ -255,7 +258,7 @@ export function graphLanes(v: GraphView, seen?: ReadonlySet<string>): { width: n
 
   list.forEach((it, k) => {
     const label = rowLabel(v, it)
-    const height = label ? ROW_H : COMPACT_H
+    const height = it.kind === 'phase' ? PHASE_H : label ? ROW_H : COMPACT_H
     const y = top + height / 2
     ys[k] = y
     const key = rowKey(it)
@@ -341,7 +344,7 @@ export function graphLanes(v: GraphView, seen?: ReadonlySet<string>): { width: n
   const blocks: string[] = []
   for (const phase of new Set(rows.flatMap(r => r.phase ?? []))) {
     const own = rows.filter(r => r.phase === phase)
-    const y1 = Math.min(...own.map(r => r.top)) + 2
+    const y1 = Math.min(...own.map(r => r.top)) + PHASE_GAP
     const y2 = Math.max(...own.map(r => r.top + r.height)) - 2
     blocks.push(`<rect x="3" y="${y1}" width="${fullWidth - 6}" height="${y2 - y1}" rx="8" class="block-${own[0]!.state}"/>`)
   }
