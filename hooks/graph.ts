@@ -314,10 +314,12 @@ export function graphLanes(v: GraphView, seen?: ReadonlySet<string>): { width: n
       nowY = Math.max(nowY, y)
       row.push(`<circle cx="${x}" cy="${y}" r="5" class="dirty"/>`)
     } else if (it.kind === 'phase') {
-      // An open phase's header is text only; a folded phase is one done node where it ended.
-      if (!it.isOpen) {
+      // An open phase's header is text only; a folded phase is one node that says how far it got.
+      if (!it.isOpen && it.state === 'done') {
         row.push(`<circle cx="${x}" cy="${y}" r="7.5" class="done-fill"/><path d="M${x - 3.5} ${y} l2.5 2.6 l4.5 -5" class="check"/>`)
         nowY = Math.max(nowY, y)
+      } else if (!it.isOpen) {
+        row.push(it.state === 'current' ? `<circle cx="${x}" cy="${y}" r="7.5" class="doing-ring"/><circle cx="${x}" cy="${y}" r="3" class="doing-fill"/>` : `<circle cx="${x}" cy="${y}" r="6.5" class="todo-ring"/>`)
       }
     } else {
       const bx = laneX(lanes.findIndex(l => l.isBase))
