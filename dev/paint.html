@@ -14,13 +14,16 @@
   .button { cursor: pointer; display: inline-flex; min-width: 0; }
   .button.boxed { border: 1px solid var(--border); border-radius: 6px; padding: 2px 8px; }
   img { display: block; flex: none; }
+  dialog { max-width: 420px; font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--border); border-radius: 10px; } dialog pre { white-space: pre-wrap; font: inherit; } dialog li { padding: 4px 0; }
   .note { font-size: 11px; color: var(--dim); padding: 4px 8px; border-bottom: 1px dashed var(--border); }
 </style>
 </head>
 <body>
 <div id="pane"><div class="note">Preview of the render tree (dev/preview.py). Spacing units drawn as 8px; the app's own painting may differ.</div></div>
+<dialog id="dialog"><h3></h3><pre></pre><ul></ul><form method="dialog"><button>Close</button></form></dialog>
 <script>
-const TREE = /*TREE*/null;
+const DATA = /*TREE*/null;
+const flipped = new Set();
 const CELL = 8;
 const color = c => (c && ['suggestion', 'success', 'warning', 'error'].includes(c) ? `var(--${c})` : c);
 const scopes = [];
@@ -65,6 +68,7 @@ function render(n, hoverScope) {
     el = document.createElement('span');
     el.className = 'button' + (p.plain ? '' : ' boxed');
     el.title = 'press: ' + (p.key || p.label);
+    if (p.key) el.addEventListener('click', () => press(p.key));
     if (!kids.length) el.textContent = p.label;
     if (n.hover && hoverScope) scopes.push([hoverScope, el, n.hover]);
   } else if (n.type === 'Svg') {
@@ -80,12 +84,37 @@ function render(n, hoverScope) {
   for (const c of kids) el.append(render(c, hoverScope));
   return el;
 }
-document.getElementById('pane').append(render(TREE));
+function draw() {
+  scopes.length = 0;
+  const pane = document.getElementById('pane');
+  pane.querySelector('.root')?.remove();
+  const root = render(DATA.trees[[...flipped].sort().join('|')]);
+  root.classList.add('root');
+  pane.append(root);
+  bindHover();
+}
+// A phase header flips its fold; a step shows the dialog the mod asked when its row was pressed.
+function press(key) {
+  if (key.includes('-phase:') && DATA.trees[[...flipped, key].sort().join('|')] !== undefined) {
+    flipped.has(key) ? flipped.delete(key) : flipped.add(key);
+    draw();
+  } else if (key in DATA.asks) {
+    const d = DATA.asks[key];
+    const dlg = document.getElementById('dialog');
+    dlg.querySelector('h3').textContent = d ? d.header || 'Step' : 'No dialog';
+    dlg.querySelector('pre').textContent = d ? d.question : 'Pressing this row asked nothing.';
+    dlg.querySelector('ul').replaceChildren(...(d ? d.options : []).map(o => Object.assign(document.createElement('li'), { textContent: o })));
+    dlg.showModal();
+  }
+}
 // Hover: the keyed Box scope lights its Button's label, as the app does.
+function bindHover() {
 for (const [scope, target, h] of scopes) {
   scope.addEventListener('mouseenter', () => { if (h.underline) target.style.textDecoration = 'underline'; if (h.color) target.style.color = color(h.color); if (h.backgroundColor) target.style.background = color(h.backgroundColor); });
   scope.addEventListener('mouseleave', () => { target.style.textDecoration = ''; target.style.color = ''; target.style.background = ''; });
 }
+}
+draw();
 </script>
 </body>
 </html>

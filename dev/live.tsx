@@ -5,6 +5,7 @@ import { mock, test } from 'claude-code/testing'
 
 import { GIT } from './gitgraph'
 import { PROGRESS_TOOL } from './lib'
+import { captureDialogs, dump } from './zz-dump'
 
 const STORE: Record<string, unknown> = /*STORE*/ {}
 const GIT_ANSWERS: Record<string, { exitCode: number; stdout: string }> = /*GIT*/ {}
@@ -14,6 +15,7 @@ const NOW = /*NOW*/ 0
 
 test('live preview', async ($, on) => {
   mock.store(on, STORE)
+  const dialogs = captureDialogs(on)
   mock.clock(on, { now: NOW })
   const asked: { cwd: string; args: string[] }[] = []
   on('process.run', (_, e) => {
@@ -35,6 +37,6 @@ test('live preview', async ($, on) => {
   for (let i = 0; i < 5; i++) await new Promise(r => setTimeout(r, 50))
   console.log('ASKED ' + JSON.stringify(asked))
   const ui = await $.ui.mount({ plugin: 'wayfinder', component: 'Pane', requestId: 'wayfinder', surface: 'desktop', props: { title: 'Wayfinder', isFocused: false, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 60 }, view: {} } })
-  console.log('PREVIEW ' + JSON.stringify(await ui.find({ type: 'Box' })))
+  await dump(ui, dialogs)
   await ui.unmount()
 })

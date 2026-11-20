@@ -535,14 +535,17 @@ export const register: Register = on => {
               <Svg source={g.slice(row)} alt={l?.text ?? 'commit'} width={g.fullWidth} height={row.height} />
             </Box>
           )}
-          {Svg && <Svg source={g.spacer(row)} alt="" width={g.width} height={row.height} />}
-          {l && id ? (
-            <Button key={`press-${r.name}-${row.key}`} label={l.text} plain hover={{ underline: true }} onPress={() => void openRow($, id)}>
-              {labelParts(l)}
-            </Button>
-          ) : (
-            l && <Text wrap="truncate">{labelParts(l)}</Text>
-          )}
+          {/* Positioned too, and after the drawing, so it paints over it and takes the clicks. */}
+          <Box position="relative" flexDirection="row" alignItems="center">
+            {Svg && <Svg source={g.spacer(row)} alt="" width={g.width} height={row.height} />}
+            {l && id ? (
+              <Button key={`press-${r.name}-${row.key}`} label={l.text} plain hover={{ underline: true }} onPress={() => void openRow($, id)}>
+                {labelParts(l)}
+              </Button>
+            ) : (
+              l && <Text wrap="truncate">{labelParts(l)}</Text>
+            )}
+          </Box>
         </Box>
       )
     }

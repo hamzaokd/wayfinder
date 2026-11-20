@@ -5,23 +5,26 @@
                                      recently updated one unless an id is given) and its real git
 
 Runs the session through the mod's test kit, takes the pane's render tree and paints it in HTML at
-the pane's width. An approximation of the desktop app's painting: layout logic shows, the app's
+the pane's width; clicks on phase headers fold them and a step shows its dialog, as recorded. An approximation of the desktop app's painting: layout logic shows, the app's
 exact fonts and spacing may differ.
 """
 import json, pathlib, shutil, subprocess, sys, time
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 TMP = ROOT / 'hooks' / 'zz-preview.test.tsx'
+DUMP = ROOT / 'hooks' / 'zz-dump.ts'
 STORE_DIR = pathlib.Path.home() / '.claude' / 'plugins' / 'store'
 
 
 def run_kit(source: str) -> dict[str, str]:
     """Runs one test file through the kit; returns its PREVIEW and ASKED lines."""
     TMP.write_text(source, encoding='utf-8')
+    shutil.copy(ROOT / 'dev' / 'dump.ts', DUMP)
     try:
         out = subprocess.run(['claude', 'plugin', 'test', '.'], cwd=ROOT, capture_output=True, text=True, encoding='utf-8', shell=sys.platform == 'win32')
     finally:
         TMP.unlink()
+        DUMP.unlink()
     lines = {l.split(' ', 1)[0]: l.split(' ', 1)[1] for l in (out.stdout + out.stderr).splitlines() if l.startswith(('PREVIEW ', 'ASKED '))}
     if 'PREVIEW' not in lines:
         sys.exit('No preview tree printed:\n' + out.stdout[-3000:] + out.stderr[-3000:])

@@ -35,7 +35,7 @@ claude plugin validate .
 claude plugin test .
 ```
 
-To see the pane without reloading the mod, run `py dev/preview.py` (a sample session) or `py dev/preview.py --live [session id]` (a real saved session with its real git), then open `dev/preview.html` in a browser. It mounts the pane through the test kit and paints its render tree. Layout logic shows; the app's own fonts and spacing may differ.
+To see the pane without reloading the mod, run `py dev/preview.py` (a sample session) or `py dev/preview.py --live [session id]` (a real saved session with its real git), then open `dev/preview.html` in a browser. It mounts the pane through the test kit and paints its render tree; phase headers fold and steps show their dialog, as the kit recorded them. Layout logic shows; the app's own fonts and spacing may differ.
 
 ## Known limits
 

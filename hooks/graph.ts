@@ -111,7 +111,7 @@ export function items(v: GraphView): { list: Item[]; lanes: Lane[]; current: num
 
   for (const st of graph?.stashes ?? []) {
     const onLane = commits.find(c => c.hash === st.parent)?.lane
-    list.push({ kind: 'stash', t: st.at, o: 3, lane: onLane ?? laneOfBranch(st.branch), name: st.name, subject: st.subject, at: st.at, isFaded: st.branch !== repo.branch })
+    list.push({ kind: 'stash', t: st.at, o: 3, lane: onLane ?? laneOfBranch(st.branch), phase: phaseAt(st.at)?.title, name: st.name, subject: st.subject, at: st.at, isFaded: st.branch !== repo.branch })
   }
 
   if (repo.dirty > 0) list.push({ kind: 'dirty', t: now, o: 4, lane: current, count: repo.dirty, phase: phaseAt(now)?.title })
@@ -135,7 +135,20 @@ export function items(v: GraphView): { list: Item[]; lanes: Lane[]; current: num
   if (hasFuture && base && !lanes[current]?.isBase && v.isPrimary) list.push({ kind: 'merge', t: Infinity, o: 1e9, lane: current, into: base.branch })
 
   list.sort((a, b) => a.t - b.t || a.o - b.o)
-  return { list, lanes, current }
+  // Each phase's rows stay together, where its first row falls in time: phases that overlap
+  // in time (a step finished after the next phase began) must not draw blocks over each other.
+  const groups = new Map<string, Item[]>()
+  const slots: (Item | Item[])[] = []
+  for (const it of list) {
+    if (it.phase === undefined) slots.push(it)
+    else if (groups.has(it.phase)) groups.get(it.phase)!.push(it)
+    else {
+      const g = [it]
+      groups.set(it.phase, g)
+      slots.push(g)
+    }
+  }
+  return { list: slots.flat(), lanes, current }
 }
 
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
