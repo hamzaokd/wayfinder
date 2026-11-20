@@ -206,6 +206,9 @@ const STYLE = `<style>
   .stash { fill: var(--bg); stroke: var(--stash); stroke-width: 1.5; } .stash-line { stroke: var(--stash); stroke-width: 1; }
   .decision { fill: var(--bg); stroke: var(--decision); stroke-width: 1.5; }
   .legend { font-size: 11px; fill: var(--muted); }
+  .block-current { fill: rgba(9,105,218,.05); stroke: var(--doing); stroke-width: .6; } .block-done { fill: none; stroke: var(--done); stroke-width: .6; }
+  .block-future { fill: none; stroke: var(--muted); stroke-width: .6; stroke-dasharray: 4 4; }
+  @media (prefers-color-scheme: dark) { .block-current { fill: rgba(68,147,248,.07); } }
   @keyframes enter { from { opacity: 0; transform: translateX(-6px); } to { opacity: 1; transform: none; } }
   .enter { animation: enter .45s ease-out both; }
   @media (prefers-reduced-motion: reduce) { .enter { animation: none; } }
@@ -216,11 +219,12 @@ const svgDoc = (y: number, w: number, h: number, body: string) =>
 
 /**
  * The timeline, drawn as rows: clicks on a drawing never reach a mod, so each row
- * is a slice of one lane drawing (time runs down) beside native, clickable text.
+ * shows its band of one drawing (lanes, nodes, phase blocks; time runs down) as a
+ * background, with native, clickable text over it past the lanes (`spacer`).
  * Light and dark follow the system's color scheme. `seen` holds the row keys drawn
  * last time: rows not in it ease in.
  */
-export function graphLanes(v: GraphView, seen?: ReadonlySet<string>): { width: number; legend: { source: string; width: number; height: number }; rows: GraphRow[]; slice: (row: GraphRow) => string } {
+export function graphLanes(v: GraphView, seen?: ReadonlySet<string>): { width: number; fullWidth: number; legend: { source: string; width: number; height: number }; rows: GraphRow[]; slice: (row: GraphRow) => string; spacer: (row: GraphRow) => string } {
   const { list, lanes } = items(v)
   const laneX = (i: number) => 14 + i * 20
   const width = laneX(lanes.length - 1) + 30
@@ -332,14 +336,26 @@ export function graphLanes(v: GraphView, seen?: ReadonlySet<string>): { width: n
     if (to && from && pl && p !== undefined && from.x !== to.x) lines.push(`<path d="M${from.x} ${from.y} C${from.x} ${from.y + 14}, ${to.x} ${to.y - 14}, ${to.x} ${to.y}" fill="none" stroke="${laneColor(pl, p)}" stroke-width="2" opacity="${pl.relevance}"/>`)
   }
 
-  // shortcut: every row's image carries the whole lane drawing and shows its own band (a viewBox); cut it per row if pages get large.
-  const body = lines.join('') + parts.join('')
+  // Phase blocks, as in the first drawing: one rounded box around each phase's rows, under the text.
+  const fullWidth = width + 360
+  const blocks: string[] = []
+  for (const phase of new Set(rows.flatMap(r => r.phase ?? []))) {
+    const own = rows.filter(r => r.phase === phase)
+    const y1 = Math.min(...own.map(r => r.top)) + 2
+    const y2 = Math.max(...own.map(r => r.top + r.height)) - 2
+    blocks.push(`<rect x="3" y="${y1}" width="${fullWidth - 6}" height="${y2 - y1}" rx="8" class="block-${own[0]!.state}"/>`)
+  }
+
+  // shortcut: every row's image carries the whole drawing and shows its own band (a viewBox); cut it per row if pages get large.
+  const body = blocks.join('') + lines.join('') + parts.join('')
   const legendH = ly + 6
   return {
     width,
+    fullWidth,
     legend: { source: svgDoc(0, LW, legendH, legend.join('')), width: LW, height: legendH },
     rows,
-    slice: row => svgDoc(row.top, width, row.height, body),
+    slice: row => svgDoc(row.top, fullWidth, row.height, body),
+    spacer: row => svgDoc(0, width, row.height, ''),
   }
 }
 
