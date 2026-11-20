@@ -1,6 +1,6 @@
 // The branch graph with the session's plan on it: lanes are branches, time runs down,
 // phases are blocks, steps sit on the branch where they ran, todo steps continue dashed.
-// One SVG, drawn as a plain picture: the step list under it takes the clicks.
+// Drawn as rows: a slice of the lane drawing beside native, clickable text.
 import type { GraphCommit, Lane, RepoLive, Step, Trail } from '../types'
 import { ago, isStuck } from './lib'
 
@@ -145,7 +145,7 @@ export function laneColor(lane: Lane, i: number): string {
   return lane.isBase ? '#888780' : lane.isCurrent ? '#639922' : LANE_COLORS[i % LANE_COLORS.length]!
 }
 
-/** The one line under a step: what matters most, nothing else. The rest is in the hover. */
+/** What matters most about a step, in one short line. */
 export function stepLine(v: GraphView, s: Step): { text: string; cls: string } | undefined {
   const isOpen = s.status !== 'done' && s.status !== 'dropped'
   if (s.status === 'dropped') return { text: `Dropped · ${s.reason ?? 'no reason given'}`, cls: 'sub drift' }
@@ -157,73 +157,117 @@ export function stepLine(v: GraphView, s: Step): { text: string; cls: string } |
   return undefined
 }
 
+/** The text of a timeline row, drawn natively beside its slice of the lanes. `id` makes it clickable. */
+export type RowLabel = { text: string; tail?: string; color?: 'success' | 'suggestion' | 'error' | 'warning'; tailColor?: 'warning'; dim?: boolean; mono?: boolean; strike?: boolean; bold?: boolean; id?: string }
+
+export function rowLabel(v: GraphView, it: Item): RowLabel | undefined {
+  if (it.kind === 'commit') {
+    if (it.isCompact) return undefined
+    const tail = it.tag && !it.label ? ` · ${it.tag} · ${ago(v.now - it.c.at)}` : it.isOwn || it.label ? ` · ${ago(v.now - it.c.at)}` : undefined
+    return { text: it.label ?? `${it.c.hash.slice(0, 7)} ${it.c.subject}`, tail, mono: !it.label, color: it.tag ? 'warning' : undefined, dim: !it.isOwn && !it.tag, id: rowKey(it) }
+  }
+  if (it.kind === 'step') {
+    const s = it.s
+    const line = stepLine(v, s)
+    return {
+      text: `${it.index + 1}. ${s.title}`,
+      tail: line ? ` · ${line.text}` : s.status === 'doing' ? ' · you are here' : undefined,
+      tailColor: line && line.cls !== 'sub' ? 'warning' : undefined,
+      color: s.status === 'doing' ? 'suggestion' : s.status === 'blocked' ? 'error' : undefined,
+      dim: s.status === 'done' || s.status === 'todo' || s.status === 'dropped',
+      strike: s.status === 'dropped',
+      bold: s.status === 'doing',
+      id: rowKey(it),
+    }
+  }
+  if (it.kind === 'phase') return { text: `${it.isOpen ? '▾' : '▸'} ${it.title}`, tail: ` · ${it.summary}`, bold: true, color: it.state === 'current' ? 'suggestion' : undefined, dim: it.state !== 'current', id: rowKey(it) }
+  if (it.kind === 'decision') return { text: `Decision: ${it.text}`, dim: true }
+  if (it.kind === 'stash') return { text: `${it.name} ${it.subject.replace(/^(WIP on|On) [^:]+: /, '')} · ${ago(v.now - it.at)}`, dim: true }
+  if (it.kind === 'dirty') return { text: `${plural(it.count, 'file')} changed, not committed` }
+  return { text: `Merge into ${it.into} (planned)`, dim: true }
+}
+
+/** One row of the timeline: its band of the lane drawing, in pixels, and its text. */
+export type GraphRow = { key: string; top: number; height: number; label?: RowLabel }
+
+const ROW_H = 26
+const COMPACT_H = 10
+
+const STYLE = `<style>
+  :root { --muted:#6e7781; --line:#d0d7de; --done:#1a7f37; --doing:#0969da; --halo:rgba(9,105,218,.15); --blocked:#cf222e; --bg:#ffffff; --stash:#6e59c9; --decision:#0f7a6a; }
+  @media (prefers-color-scheme: dark) { :root { --muted:#8d96a0; --line:#3d444d; --done:#3fb950; --doing:#4493f8; --halo:rgba(68,147,248,.2); --blocked:#f85149; --bg:#0d1117; --stash:#a08cf0; --decision:#3cc7a8; } }
+  .rail-todo { stroke: var(--line); stroke-width: 2.5; stroke-dasharray: 4 4; }
+  .done-fill { fill: var(--done); } .doing-ring { fill: var(--bg); stroke: var(--doing); stroke-width: 2.5; }
+  .doing-fill { fill: var(--doing); } .halo { fill: var(--halo); } .blocked-fill { fill: var(--blocked); }
+  .todo-ring { fill: var(--bg); stroke: var(--muted); stroke-width: 2; }
+  .diamond-open { fill: var(--bg); stroke: #EF9F27; stroke-width: 2.5; }
+  .check { stroke: #fff; stroke-width: 2; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+  .dirty { fill: none; stroke: var(--doing); stroke-width: 1.5; stroke-dasharray: 2 2; }
+  .stash { fill: var(--bg); stroke: var(--stash); stroke-width: 1.5; } .stash-line { stroke: var(--stash); stroke-width: 1; }
+  .decision { fill: var(--bg); stroke: var(--decision); stroke-width: 1.5; }
+  .legend { font-size: 11px; fill: var(--muted); }
+  @keyframes enter { from { opacity: 0; transform: translateX(-6px); } to { opacity: 1; transform: none; } }
+  .enter { animation: enter .45s ease-out both; }
+  @media (prefers-reduced-motion: reduce) { .enter { animation: none; } }
+</style>`
+
+const svgDoc = (y: number, w: number, h: number, body: string) =>
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 ${y} ${w} ${h}" width="${w}" height="${h}" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif">${STYLE}${body}</svg>`
+
 /**
- * The graph as one SVG. Light and dark follow the system's color scheme.
- * `seen` holds the row ids drawn last time: rows not in it animate in, and the
- * rows below them slide down from where they were instead of jumping.
+ * The timeline, drawn as rows: clicks on a drawing never reach a mod, so each row
+ * is a slice of one lane drawing (time runs down) beside native, clickable text.
+ * Light and dark follow the system's color scheme. `seen` holds the row keys drawn
+ * last time: rows not in it ease in.
  */
-export function graphSvg(v: GraphView, seen?: ReadonlySet<string>): { source: string; width: number; height: number; ids: string[] } {
+export function graphLanes(v: GraphView, seen?: ReadonlySet<string>): { width: number; legend: { source: string; width: number; height: number }; rows: GraphRow[]; slice: (row: GraphRow) => string } {
   const { list, lanes } = items(v)
-  const laneX = (i: number) => 18 + i * 24
-  const textX = Math.max(70, laneX(lanes.length - 1) + 28)
-  const W = textX + 380
-  const chars = (px: number) => Math.floor((W - textX - 8) / px)
+  const laneX = (i: number) => 14 + i * 20
+  const width = laneX(lanes.length - 1) + 30
 
   // Legend: one dot and name per lane, wrapping.
+  const LW = 420
   const legend: string[] = []
-  let lx = 8
-  let ly = 16
+  let lx = 4
+  let ly = 14
   lanes.forEach((l, i) => {
     const label = cut(l.branch, 22)
     const w = 16 + label.length * 6.4 + 14
-    if (lx + w > W) {
-      lx = 8
+    if (lx + w > LW) {
+      lx = 4
       ly += 16
     }
     legend.push(`<g opacity="${l.relevance}"><circle cx="${lx + 5}" cy="${ly - 4}" r="4" fill="${laneColor(l, i)}"/><text x="${lx + 13}" y="${ly}" class="legend">${esc(label)}</text></g>`)
     lx += w
   })
 
+  const rows: GraphRow[] = []
   const ys: number[] = []
   const parts: string[] = []
-  const blocks: string[] = []
   const at = new Map<string, { x: number; y: number }>()
-  let y = ly + 14
-  if (v.repo.graph?.skipped) {
-    y += 8
-    parts.push(`<text x="${textX}" y="${y + 4}" class="sub">+${v.repo.graph.skipped} older commits not shown</text>`)
-    y += 10
-  }
-  const phaseSpan = new Map<string, { y1: number; y2: number; state: PhaseState }>()
-  let nowY = y
-  let lastY = y
-  const rowSvg: string[] = []
-  const rowTop: number[] = []
-  let row: string[] = []
+  let top = 0
+  let nowY = 0
+  const isFresh = (key: string) => seen !== undefined && seen.size > 0 && !seen.has(key)
 
   list.forEach((it, k) => {
-    row = []
-    rowTop[k] = y
-    const gap = k === 0 ? 8 : it.kind === 'commit' && it.isCompact ? 9 : it.kind === 'phase' ? 28 : 22
-    y += gap
+    const label = rowLabel(v, it)
+    const height = label ? ROW_H : COMPACT_H
+    const y = top + height / 2
+    ys[k] = y
+    const key = rowKey(it)
+    rows.push({ key, top, height, label })
     const x = laneX(it.lane)
     const lane = lanes[it.lane]
     const op = lane ? lane.relevance : 1
+    const row: string[] = []
     if (it.kind === 'commit') {
       at.set(it.c.hash, { x, y })
       const color = it.tag ? '#BA7517' : laneColor(lanes[it.lane]!, it.lane)
       row.push(`<circle cx="${x}" cy="${y}" r="${it.isCompact ? 3 : 4.5}" fill="${color}" opacity="${it.tag ? 1 : op}"/>`)
-      if (!it.isCompact) {
-        const text = it.label ?? `${it.c.hash.slice(0, 7)} ${it.c.subject}`
-        const tail = it.tag && !it.label ? ` · ${it.tag} · ${ago(v.now - it.c.at)}` : it.isOwn || it.label ? ` · ${ago(v.now - it.c.at)}` : ''
-        const cls = it.tag ? 'ev warn' : it.isOwn ? 'ev' : 'ev muted'
-        row.push(`<text x="${textX}" y="${y + 4}" class="${cls}" opacity="${it.label ? op : 1}">${esc(cut(text, chars(7.2) - tail.length))}<tspan class="muted">${esc(tail)}</tspan></text>`)
-      }
       nowY = Math.max(nowY, y)
     } else if (it.kind === 'step') {
       const s = it.s
-      const isFuture = it.t === Infinity
-      if (!isFuture) nowY = Math.max(nowY, y)
+      if (it.t !== Infinity) nowY = Math.max(nowY, y)
       if (s.addedLate && s.status !== 'dropped') {
         const fill = s.status === 'done' ? 'fill="#EF9F27"' : 'class="diamond-open"'
         row.push(`<path d="M${x} ${y - 8} l8 8 l-8 8 l-8 -8 Z" ${fill}/>`)
@@ -238,76 +282,42 @@ export function graphSvg(v: GraphView, seen?: ReadonlySet<string>): { source: st
       } else {
         row.push(`<circle cx="${x}" cy="${y}" r="6.5" class="todo-ring"/>`)
       }
-      const here = s.status === 'doing' ? ' · you are here' : ''
-      row.push(`<text x="${textX}" y="${y + 5}" class="step ${s.status}">${esc(cut(`${it.index + 1}. ${s.title}`, chars(7.6) - here.length))}${here}</text>`)
-      const line = stepLine(v, s)
-      if (line) {
-        y += 16
-        row.push(`<text x="${textX}" y="${y + 4}" class="${line.cls}">${esc(cut(line.text, chars(6.6)))}</text>`)
-      }
     } else if (it.kind === 'decision') {
       nowY = Math.max(nowY, y)
       row.push(`<path d="M${x} ${y - 5} l5 5 l-5 5 l-5 -5 Z" class="decision"/>`)
-      row.push(`<text x="${textX}" y="${y + 4}" class="sub decision-text">${esc(cut(`Decision: ${it.text}`, chars(6.6)))}</text>`)
     } else if (it.kind === 'stash') {
-      const o = it.isFaded ? 0.55 : 1
-      row.push(`<g opacity="${o}"><line x1="${x}" y1="${y}" x2="${x + 12}" y2="${y}" class="stash-line"/><rect x="${x + 12}" y="${y - 5}" width="10" height="10" rx="2" class="stash"/></g>`)
-      const text = `${it.name} ${it.subject.replace(/^(WIP on|On) [^:]+: /, '')} · ${ago(v.now - it.at)}`
-      row.push(`<text x="${textX}" y="${y + 4}" class="sub stash-text" opacity="${o}">${esc(cut(text, chars(6.6)))}</text>`)
+      row.push(`<g opacity="${it.isFaded ? 0.55 : 1}"><line x1="${x}" y1="${y}" x2="${x + 12}" y2="${y}" class="stash-line"/><rect x="${x + 12}" y="${y - 5}" width="10" height="10" rx="2" class="stash"/></g>`)
     } else if (it.kind === 'dirty') {
       nowY = Math.max(nowY, y)
       row.push(`<circle cx="${x}" cy="${y}" r="5" class="dirty"/>`)
-      row.push(`<text x="${textX}" y="${y + 4}" class="sub">${plural(it.count, 'file')} changed, not committed</text>`)
     } else if (it.kind === 'phase') {
-      if (it.isOpen) {
-        phaseSpan.set(it.title, { y1: y - 12, y2: y + 6, state: it.state })
-        row.push(`<text x="${textX}" y="${y + 5}" class="phase ${it.state}">▾ ${esc(cut(it.title, 30))}<tspan class="phase-sub"> · ${esc(it.summary)}</tspan></text>`)
-      } else {
+      // An open phase's header is text only; a folded phase is one done node where it ended.
+      if (!it.isOpen) {
         row.push(`<circle cx="${x}" cy="${y}" r="7.5" class="done-fill"/><path d="M${x - 3.5} ${y} l2.5 2.6 l4.5 -5" class="check"/>`)
-        blocks.push(`<rect x="${laneX(0) - 12}" y="${y - 14}" width="${W - laneX(0) + 8}" height="28" rx="7" class="block-done"/>`)
-        row.push(`<text x="${textX}" y="${y + 5}" class="phase done">▸ ${esc(cut(it.title, 30))}<tspan class="phase-sub"> · ${esc(it.summary)}</tspan></text>`)
         nowY = Math.max(nowY, y)
       }
     } else {
       const bx = laneX(lanes.findIndex(l => l.isBase))
       row.push(`<path d="M${x} ${y - 12} C${x} ${y + 4}, ${bx} ${y - 4}, ${bx} ${y + 12}" class="rail-todo" fill="none"/>`)
-      row.push(`<text x="${textX}" y="${y + 8}" class="sub">Merge into ${esc(it.into)} (planned)</text>`)
-      y += 12
     }
-    if (it.phase && phaseSpan.has(it.phase)) phaseSpan.get(it.phase)!.y2 = y + 10
-    ys[k] = y
-    lastY = y
-    rowSvg[k] = row.join('')
+    parts.push(isFresh(key) ? `<g class="enter">${row.join('')}</g>` : row.join(''))
+    top += height
   })
-
-  // New rows ease in; every row below them starts where it was and slides down.
-  const ids = list.map(rowKey)
-  const hasSeen = seen !== undefined && seen.size > 0
-  let added = 0
-  const rowsOut = rowSvg.map((svg, k) => {
-    if (hasSeen && !seen.has(ids[k]!)) {
-      added += ys[k]! - rowTop[k]!
-      return `<g class="enter">${svg}</g>`
-    }
-    return added ? `<g class="slide" style="--dy:-${added}px">${svg}</g>` : svg
-  })
-
-  for (const span of phaseSpan.values()) blocks.push(`<rect x="${laneX(0) - 12}" y="${span.y1}" width="${W - laneX(0) + 8}" height="${span.y2 - span.y1}" rx="8" class="block-${span.state}"/>`)
+  const lastY = ys.at(-1) ?? 0
 
   // Lane lines: each lane runs through its own rows; the current one goes on dashed past "now".
   const lines: string[] = []
-  const top = ly + 14
   lanes.forEach((l, i) => {
     const mineY = list.map((it, k) => (it.lane === i ? ys[k]! : undefined)).filter((n): n is number => n !== undefined)
     const x = laneX(i)
     const color = laneColor(l, i)
-    let y1 = mineY.length ? Math.min(...mineY) : top
-    const y2 = l.isBase ? lastY : mineY.length ? Math.max(...mineY) : top
+    let y1 = mineY.length ? Math.min(...mineY) : 0
+    const y2 = l.isBase ? lastY : mineY.length ? Math.max(...mineY) : 0
     const from = l.forkFrom ? at.get(l.forkFrom) : undefined
     if (from && from.x !== x) {
       lines.push(`<path d="M${from.x} ${from.y} C${from.x} ${from.y + 14}, ${x} ${y1 - 14}, ${x} ${y1}" fill="none" stroke="${color}" stroke-width="2.5" opacity="${l.relevance}"/>`)
     } else if (l.isBase || l.isCurrent) {
-      y1 = Math.min(y1, top)
+      y1 = 0
     }
     const solidEnd = l.isCurrent || l.isBase ? Math.min(Math.max(nowY, y1), y2) : y2
     if (solidEnd > y1) lines.push(`<line x1="${x}" y1="${y1}" x2="${x}" y2="${solidEnd}" stroke="${color}" stroke-width="2.5" opacity="${l.relevance}"/>`)
@@ -322,46 +332,18 @@ export function graphSvg(v: GraphView, seen?: ReadonlySet<string>): { source: st
     if (to && from && pl && p !== undefined && from.x !== to.x) lines.push(`<path d="M${from.x} ${from.y} C${from.x} ${from.y + 14}, ${to.x} ${to.y - 14}, ${to.x} ${to.y}" fill="none" stroke="${laneColor(pl, p)}" stroke-width="2" opacity="${pl.relevance}"/>`)
   }
 
-  let height = lastY + 20
-  if (v.repo.graph?.hidden) {
-    parts.push(`<text x="8" y="${height + 2}" class="sub">+${v.repo.graph.hidden} other branch${v.repo.graph.hidden === 1 ? '' : 'es'} hidden (no recent commits)</text>`)
-    height += 16
+  // shortcut: every row's image carries the whole lane drawing and shows its own band (a viewBox); cut it per row if pages get large.
+  const body = lines.join('') + parts.join('')
+  const legendH = ly + 6
+  return {
+    width,
+    legend: { source: svgDoc(0, LW, legendH, legend.join('')), width: LW, height: legendH },
+    rows,
+    slice: row => svgDoc(row.top, width, row.height, body),
   }
-
-  const source = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${height}" width="${W}" height="${height}" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif">
-<style>
-  :root { --text:#1f2328; --muted:#6e7781; --line:#d0d7de; --done:#1a7f37; --doing:#0969da; --halo:rgba(9,105,218,.15); --blocked:#cf222e; --warn:#bc4c00; --bg:#ffffff; --tint:rgba(9,105,218,.05); --stash:#6e59c9; --decision:#0f7a6a; }
-  @media (prefers-color-scheme: dark) { :root { --text:#e6edf3; --muted:#8d96a0; --line:#3d444d; --done:#3fb950; --doing:#4493f8; --halo:rgba(68,147,248,.2); --blocked:#f85149; --warn:#db6d28; --bg:#0d1117; --tint:rgba(68,147,248,.07); --stash:#a08cf0; --decision:#3cc7a8; } }
-  .rail-todo { stroke: var(--line); stroke-width: 2.5; stroke-dasharray: 4 4; }
-  .done-fill { fill: var(--done); } .doing-ring { fill: var(--bg); stroke: var(--doing); stroke-width: 2.5; }
-  .doing-fill { fill: var(--doing); } .halo { fill: var(--halo); } .blocked-fill { fill: var(--blocked); }
-  .todo-ring { fill: var(--bg); stroke: var(--muted); stroke-width: 2; }
-  .diamond-open { fill: var(--bg); stroke: #EF9F27; stroke-width: 2.5; }
-  .check { stroke: #fff; stroke-width: 2; fill: none; stroke-linecap: round; stroke-linejoin: round; }
-  .dirty { fill: none; stroke: var(--doing); stroke-width: 1.5; stroke-dasharray: 2 2; }
-  .stash { fill: var(--bg); stroke: var(--stash); stroke-width: 1.5; } .stash-line { stroke: var(--stash); stroke-width: 1; } .stash-text { fill: var(--stash); }
-  .decision { fill: var(--bg); stroke: var(--decision); stroke-width: 1.5; } .decision-text { fill: var(--decision); }
-  .block-current { fill: var(--tint); stroke: var(--doing); stroke-width: .6; } .block-done { fill: none; stroke: var(--done); stroke-width: .6; }
-  .block-future { fill: none; stroke: var(--muted); stroke-width: .6; stroke-dasharray: 4 4; }
-  text { fill: var(--text); } .legend { font-size: 11px; fill: var(--muted); }
-  .step { font-size: 14px; } .doing { font-weight: 650; fill: var(--doing); } .done, .todo { fill: var(--muted); }
-  .blocked { fill: var(--blocked); font-weight: 600; } .dropped { fill: var(--muted); text-decoration: line-through; opacity: .7; }
-  .phase { font-size: 13px; font-weight: 650; } .phase.current { fill: var(--doing); } .phase.done, .phase.future { fill: var(--muted); }
-  .phase-sub { font-weight: 400; fill: var(--muted); }
-  .sub { font-size: 12px; fill: var(--muted); } .waiting { fill: var(--warn); font-weight: 600; } .drift { fill: var(--warn); }
-  .ev { font-family: ui-monospace, Consolas, monospace; font-size: 12px; } .warn { fill: var(--warn); }
-  .muted { fill: var(--muted); }
-  @keyframes enter { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: none; } }
-  @keyframes slide { from { transform: translateY(var(--dy)); } to { transform: none; } }
-  .enter { animation: enter .45s ease-out both; } .slide { animation: slide .4s ease-out both; }
-  @media (prefers-reduced-motion: reduce) { .enter, .slide { animation: none; } }
-</style>
-${blocks.join('')}${lines.join('')}${rowsOut.join('')}${legend.join('')}${parts.join('')}
-</svg>`
-  return { source, width: W, height, ids }
 }
 
-/** A row's identity across redraws: what "new" is measured against. */
+/** A row's identity across redraws: what "new" is measured against, and what a click opens. */
 export function rowKey(it: Item): string {
   if (it.kind === 'step') return `step:${it.s.title}`
   if (it.kind === 'phase') return `phase:${it.title}`
@@ -371,30 +353,23 @@ export function rowKey(it: Item): string {
   return it.kind
 }
 
-/** A step's status as one character, for the terminal graph and the step list. */
+/** A step's status as one character, for the terminal. */
 export function stepGlyph(s: Step): string {
   return s.addedLate && s.status !== 'dropped' ? '◆' : { done: '✓', doing: '◉', blocked: '✖', todo: '○', dropped: '⊘' }[s.status]
 }
 
-export type TextLine = { text: string; color?: 'success' | 'suggestion' | 'error' | 'warning'; dim?: boolean; id?: string }
+export type TextLine = { text: string; color?: RowLabel['color']; dim?: boolean; id?: string }
 
 /** The terminal has no Svg: the same rows, one per line, indented by lane. */
 export function graphText(v: GraphView): TextLine[] {
   const { list, lanes } = items(v)
   const out: TextLine[] = [{ text: lanes.map(l => `${l.isCurrent ? '●' : '○'} ${l.branch}`).join('   '), dim: true }]
-  const pad = (lane: number) => '│ '.repeat(lane)
   for (const it of list) {
-    if (it.kind === 'phase') out.push({ text: `${it.isOpen ? '▾' : '▸'} ${it.title} · ${it.summary}`, color: it.state === 'current' ? 'suggestion' : undefined, dim: it.state !== 'current', id: rowKey(it) })
-    else if (it.kind === 'commit' && !it.isCompact) out.push({ text: `${pad(it.lane)}* ${it.label ?? `${it.c.hash.slice(0, 7)} ${it.c.subject}`}${it.tag ? ` · ${it.tag}` : ''}`, color: it.tag ? 'warning' : undefined, dim: !it.isOwn && !it.tag, id: rowKey(it) })
-    else if (it.kind === 'step') {
-      const s = it.s
-      out.push({ text: `${pad(it.lane)}${stepGlyph(s)} ${it.index + 1}. ${s.title}${s.status === 'doing' ? ' · you are here' : ''}`, color: s.status === 'done' ? 'success' : s.status === 'doing' ? 'suggestion' : s.status === 'blocked' ? 'error' : undefined, dim: s.status === 'todo' || s.status === 'dropped', id: rowKey(it) })
-      const line = stepLine(v, s)
-      if (line) out.push({ text: `${pad(it.lane)}    ${line.text}`, color: line.cls.includes('drift') || line.cls.includes('waiting') ? 'warning' : undefined, dim: line.cls === 'sub' })
-    } else if (it.kind === 'decision') out.push({ text: `${pad(it.lane)}◇ Decision: ${it.text}`, dim: true })
-    else if (it.kind === 'stash') out.push({ text: `${pad(it.lane)}▫ ${it.name} ${it.subject}`, dim: it.isFaded })
-    else if (it.kind === 'dirty') out.push({ text: `${pad(it.lane)}◌ ${it.count} files changed, not committed` })
-    else if (it.kind === 'merge') out.push({ text: `╰ merge into ${it.into} (planned)`, dim: true })
+    const l = rowLabel(v, it)
+    if (!l) continue
+    const glyph = it.kind === 'step' ? stepGlyph(it.s) : { commit: '*', decision: '◇', stash: '▫', dirty: '◌', merge: '╰', phase: '' }[it.kind]
+    const pad = it.kind === 'phase' || it.kind === 'merge' ? '' : '│ '.repeat(it.lane)
+    out.push({ text: `${pad}${glyph ? `${glyph} ` : ''}${l.text}${l.tail ?? ''}`, color: l.color ?? l.tailColor, dim: l.dim, id: l.id })
   }
   return out
 }

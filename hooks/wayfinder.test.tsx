@@ -3,7 +3,7 @@ import { expect, mock, test } from 'claude-code/testing'
 
 import type { RepoLive } from '../types'
 import { GIT } from './gitgraph'
-import { graphSvg, graphText, items } from './graph'
+import { graphLanes, graphText, items } from './graph'
 import { applyPlan, attributeEdits, dirsFromToolUse, emptyTrail, normPath, PROGRESS_TOOL, quoted, rebuildFromHistory, sinceYouLeft, stepMenu, waitingOnYou } from './lib'
 
 const PANE = {
@@ -138,19 +138,23 @@ test('the graph puts steps on their branch, folds finished phases, and plans the
     'step:PR@1',
     'merge',
   ])
-  const { source, ids } = graphSvg(view)
-  expect(source).toContain('▸ Investigate<tspan class="phase-sub"> · 1 step done · 1 commit')
-  expect(source).toContain('▾ Build<tspan')
-  // Nothing animates on a first draw.
-  expect(source).not.toContain('class="enter"')
-  // Drawn again with a step that wasn't there: it eases in, the rows below slide down.
-  const again = graphSvg({ ...view, trail: { ...t, steps: [...t.steps, { ...t.steps[2]!, title: 'Docs' }] } }, new Set(ids)).source
-  expect(again.match(/class="enter"/g)?.length).toBe(1)
-  expect(again).toMatch(/class="slide" style="--dy:-\d+px"/)
-  expect(source).toContain('2. Writer · you are here')
-  expect(source).toContain('fix/login · also edits auth.ts')
-  expect(source).toContain('Merge into main (planned)')
-  expect(source).toContain('+3 other branches hidden')
+  const g = graphLanes(view)
+  const shown = g.rows.map(r => (r.label ? `${r.label.text}${r.label.tail ?? ''}` : '·'))
+  expect(shown).toContain('▸ Investigate · 1 step done · 1 commit')
+  expect(shown).toContain('▾ Build · step 1 of 1')
+  expect(shown).toContain('2. Writer · you are here')
+  expect(shown).toContain('Merge into main (planned)')
+  expect(shown.some(x => x.startsWith('fix/login · also edits auth.ts'))).toBe(true)
+  // Phases, steps and labelled commits are clickable (the folded phase's commit is a bare dot).
+  expect(g.rows.flatMap(r => r.label?.id ?? [])).toEqual(['phase:Investigate', 'phase:Build', 'step:Writer', 'commit:' + H('b'), 'commit:' + H('l'), 'commit:' + H('m'), 'phase:Ship', 'step:PR'])
+  // Each row shows its own band of one drawing, and the bands tile it with no gap.
+  g.rows.forEach((r, i) => i > 0 && expect(r.top).toBe(g.rows[i - 1]!.top + g.rows[i - 1]!.height))
+  const second = g.rows[1]!
+  expect(g.slice(second)).toContain(`viewBox="0 ${second.top} ${g.width} ${second.height}"`)
+  // Nothing animates on a first draw; drawn again with a step that wasn't there, it eases in.
+  expect(g.slice(second)).not.toContain('class="enter"')
+  const again = graphLanes({ ...view, trail: { ...t, steps: [...t.steps, { ...t.steps[2]!, title: 'Docs' }] } }, new Set(g.rows.map(r => r.key)))
+  expect(again.slice(again.rows[0]!).match(/class="enter"/g)?.length).toBe(1)
   expect(graphText(view).some(l => l.text.includes('◉ 2. Writer · you are here'))).toBe(true)
 
   // A click folds or unfolds one phase.
@@ -270,39 +274,26 @@ test('the pane: the graph, clicks on it, the dialog, and where actions go', asyn
     expect((await ui.find({ type: 'Text', text: /^Add CSV export$/ }))?.text).toBe('Add CSV export')
     // The waiting card names the step; the graph draws it.
     expect(await ui.find({ type: 'Text', text: /This session: Benchmark on 1M rows: run it on staging/ })).toBeTruthy()
-    const graph = async () => (surface === 'terminal' ? (await ui.findAll({ type: 'Text' })).map(x => x.text).join('\n') : String((await ui.find({ type: 'Svg' }))?.props.source))
-    expect(await graph()).toContain('2. Benchmark on 1M rows · you are here')
+    const graph = async () => (await ui.findAll({ type: 'Text' })).map(x => x.text).join('\n')
+    expect(await graph()).toContain('2. Benchmark on 1M rows')
+    expect(await graph()).toContain(' · waiting on you: run it on staging')
     expect(await graph()).toContain('bbbbbbb add writer')
 
-    // A click on a row: the terminal's graph lines are buttons; on desktop the step list under the picture is.
+    // A click on a row of the timeline: its text is a button, on every surface.
     const click = async (id: string) => {
-      if (surface === 'terminal') {
-        const lines = await ui.findAll({ type: 'Button' })
-        const line = lines.find(b => b.text.includes(id.replace(/^(step|phase):/, '')))
-        await ui.press({ key: line!.key! })
-        return
-      }
-      const key = id === 'phase:Investigate' ? 'phase-r-Investigate' : id === 'step:Open PR' ? 'step-r-3' : id
-      await ui.press({ key })
+      const lines = await ui.findAll({ type: 'Button' })
+      const line = lines.find(b => b.text.includes(id.replace(/^(step|phase):/, '')))
+      await ui.press({ key: line!.key! })
     }
-    if (surface === 'desktop') {
-      // A list, not a form: glyph, number and title, at most one short tag; the row lights under the pointer.
-      expect((await ui.find({ key: 'step-r-2' }))?.text).toBe('◉ 2. Benchmark on 1M rows · waiting on you')
-      expect((await ui.find({ key: 'step-r-3' }))?.text).toBe('○ 3. Open PR')
-      expect(JSON.stringify(await ui.find({ key: 'row-r-step-3' }))).toContain('"hover":{"underline":true}')
-    }
+    // On desktop the row lights up under the pointer.
+    if (surface === 'desktop') expect(JSON.stringify(await ui.find({ key: 'row-r-step:Open PR' }))).toContain('"hover":{"underline":true}')
 
     // The finished phase is folded into one row; a click on it opens it, another folds it.
-    // The list folds with the graph.
-    const listed = async () => surface === 'desktop' && !!(await ui.find({ key: 'step-r-1' }))
     expect(await graph()).not.toContain('1. Check S3 permissions')
-    expect(await listed()).toBe(false)
     await click('phase:Investigate')
     expect(await graph()).toContain('1. Check S3 permissions')
-    expect(await listed()).toBe(surface === 'desktop')
     await click('phase:Investigate')
     expect(await graph()).not.toContain('1. Check S3 permissions')
-    expect(await listed()).toBe(false)
 
     // A click on a step opens the dialog; work becomes a draft in the message box, never a send.
     answer = 'Work up to here'

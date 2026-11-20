@@ -3,8 +3,8 @@ import type { EngineInterface, Register } from 'claude-code'
 
 import type { RepoLive, Seen, Trail, TrailEvent } from '../types'
 import { git, isAncestor, repoGraph, repoRoot, snapshot } from './gitgraph'
-import { graphSvg, graphText, isPhaseOpen, phaseState, stepGlyph } from './graph'
-import type { GraphView } from './graph'
+import { graphLanes, graphText, isPhaseOpen, phaseState } from './graph'
+import type { GraphView, RowLabel } from './graph'
 import {
   ago,
   applyPlan,
@@ -469,15 +469,40 @@ export const register: Register = on => {
     const cur = currentStep(t.steps)
     const showOthers = open[OTHERS_KEY] ?? false
 
+    const labelParts = (l: RowLabel) => [
+      <Text color={l.color} dimColor={l.dim} mono={l.mono} strikethrough={l.strike} weight={l.bold ? 'semibold' : undefined} wrap="truncate">
+        {l.text}
+      </Text>,
+      ...(l.tail ? [<Text color={l.tailColor} dimColor={!l.tailColor} wrap="truncate">{l.tail}</Text>] : []),
+    ]
+
     const graphOf = (r: RepoLive) => {
       const view: GraphView = { trail: t, repo: r, isPrimary: r.root === primary, expanded: open, now, ownerOf }
       if (Svg) {
-        const drawn = graphSvg(view, drawnRows.get(r.root))
-        drawnRows.set(r.root, new Set(drawn.ids))
-        note(`drew ${r.name} on ${e.surface}: ${drawn.width}x${drawn.height}px`)
-        const alt = `Branch graph of ${r.name}: ${t.steps.map((s, i) => `${i + 1}. ${s.title} (${s.status})`).join(', ') || 'commits'}`
-        // The drawing is a picture only (clicks on an Svg never reach a mod): the list under it takes them.
-        return [<Svg source={drawn.source} alt={alt} width={drawn.width} height={drawn.height} />, stepList(r)]
+        // Each row: its slice of the lane drawing, then its text. Clicks on an Svg never reach a mod; the text takes them.
+        const g = graphLanes(view, drawnRows.get(r.root))
+        drawnRows.set(r.root, new Set(g.rows.map(x => x.key)))
+        note(`drew ${r.name} on ${e.surface}: ${g.rows.length} rows, lanes ${g.width}px wide`)
+        return [
+          <Svg source={g.legend.source} alt={`Branches of ${r.name}`} width={g.legend.width} height={g.legend.height} />,
+          ...(r.graph?.skipped ? [<Text dimColor>+{r.graph.skipped} older commits not shown</Text>] : []),
+          ...g.rows.map(row => {
+            const l = row.label
+            const id = l?.id
+            return (
+              <Box key={`row-${r.name}-${row.key}`} flexDirection="row" alignItems="center">
+                <Svg source={g.slice(row)} alt={l?.text ?? 'commit'} width={g.width} height={row.height} />
+                {l && id ? (
+                  <Button key={`press-${r.name}-${row.key}`} label={l.text} plain hover={{ underline: true }} onPress={() => void openRow($, id)}>
+                    {labelParts(l)}
+                  </Button>
+                ) : (
+                  l && <Text wrap="truncate">{labelParts(l)}</Text>
+                )}
+              </Box>
+            )
+          }),
+        ]
       }
       // The terminal: each line that names a step, phase or commit is a button.
       return graphText(view).map((line, i) => {
@@ -495,47 +520,6 @@ export const register: Register = on => {
           text
         )
       })
-    }
-
-    // The plan under a repo's picture: phase headers fold, a step opens its dialog.
-    const stepList = (r: RepoLive) => {
-      const mine = t.steps.filter(s => (s.repo ? s.repo === r.root : r.root === primary))
-      return (
-        <Box flexDirection="column" marginTop={1}>
-          {t.phases.flatMap(phase => {
-            const own = mine.filter(s => s.phase === phase)
-            if (own.length === 0) return []
-            const all = t.steps.filter(s => s.phase === phase)
-            const isOpen = isPhaseOpen(phase, phaseState(all), open)
-            const live = all.filter(s => s.status !== 'dropped')
-            return [
-              <Box key={`row-${r.name}-phase-${phase}`} flexDirection="row">
-                <Button key={`phase-${r.name}-${phase}`} plain hover={{ color: 'suggestion' }} onPress={() => void openRow($, `phase:${phase}`)}>
-                  <Text weight="semibold">{isOpen ? '▾' : '▸'} {phase}</Text>
-                  <Text dimColor> {live.filter(s => s.status === 'done').length}/{live.length}</Text>
-                </Button>
-              </Box>,
-              ...(isOpen ? own : []).map(s => {
-                const n = t.steps.indexOf(s) + 1
-                const isOpenStep = s.status !== 'done' && s.status !== 'dropped'
-                const tag = s.status === 'dropped' ? 'dropped' : s.addedLate ? 'not in plan' : isOpenStep && s.waitingOn === 'you' ? 'waiting on you' : s.status === 'doing' ? 'you are here' : undefined
-                const color = s.status === 'done' ? 'success' : s.status === 'doing' ? 'suggestion' : s.status === 'blocked' ? 'error' : undefined
-                return (
-                  <Box key={`row-${r.name}-step-${n}`} flexDirection="row" paddingLeft={2}>
-                    <Button key={`step-${r.name}-${n}`} label={`${n}. ${s.title}`} plain hover={{ underline: true }} onPress={() => void openRow($, `step:${s.title}`)}>
-                      <Text color={color}>{stepGlyph(s)} </Text>
-                      <Text dimColor={s.status === 'todo' || s.status === 'dropped'} strikethrough={s.status === 'dropped'}>
-                        {n}. {s.title}
-                      </Text>
-                      {tag && <Text dimColor color={tag === 'waiting on you' ? 'warning' : undefined}> · {tag}</Text>}
-                    </Button>
-                  </Box>
-                )
-              }),
-            ]
-          })}
-        </Box>
-      )
     }
 
     return (
