@@ -3,7 +3,7 @@ import type { EngineInterface, Register } from 'claude-code'
 
 import type { RepoLive, Seen, Trail, TrailEvent } from '../types'
 import { git, isAncestor, repoGraph, repoRoot, snapshot } from './gitgraph'
-import { graphLanes, graphText, isPhaseOpen, phaseState } from './graph'
+import { graphLanes, graphText, isPhaseOpen, legendSvg, phaseState } from './graph'
 import type { GraphRow, GraphView, PhaseState, RowLabel } from './graph'
 import { langOf, setLang, T } from './i18n'
 import {
@@ -49,6 +49,7 @@ const langNow = atom({ plugin: 'wayfinder', key: 'lang' } as const, 'en', { shap
 const LANG_KEY = 'lang'
 const FORGOTTEN_KEY = 'forgotten'
 const OTHERS_KEY = '__others'
+const LEGEND_KEY = '__legend'
 // A phase block's outline: blue while current, green once done, dim before it starts.
 const BLOCK: Record<PhaseState, string> = { current: 'suggestion', done: 'success', future: 'inactive' }
 /** Rows in runs of one phase (a phase's rows are together): each run is one block. */
@@ -583,6 +584,8 @@ export const register: Register = on => {
     const primary = primaryRoot(t, lives)
     const cur = currentStep(t.steps)
     const showOthers = open[OTHERS_KEY] ?? false
+    const showLegend = open[LEGEND_KEY] ?? false
+    const legend = showLegend && Svg ? legendSvg() : undefined
 
     const labelParts = (l: RowLabel) => [
       <Text color={l.color} dimColor={l.dim} mono={l.mono} strikethrough={l.strike} weight={l.bold ? 'semibold' : undefined} wrap="truncate">
@@ -776,6 +779,16 @@ export const register: Register = on => {
             <Box flexDirection="column">{graphOf(r)}</Box>
           </Box>
         ))}
+
+        {/* What the shapes and colors mean; folded until asked for. */}
+        {lives.length > 0 && (
+          <Box flexDirection="column">
+            <Box flexDirection="row">
+              <Button key="legend-toggle" plain dimColor label={`${showLegend ? '▾' : '▸'} ${T.legend}`} onPress={() => void togglePhase($, LEGEND_KEY, showLegend)} />
+            </Box>
+            {showLegend && (Svg && legend ? <Svg source={legend.source} alt={T.lgText} width={legend.width} height={legend.height} /> : <Text dimColor>{T.lgText}</Text>)}
+          </Box>
+        )}
 
         {t.unplannedFiles.length > 0 && (
           <Text color="warning">

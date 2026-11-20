@@ -365,6 +365,55 @@ export function graphLanes(v: GraphView, seen?: ReadonlySet<string>): { width: n
   }
 }
 
+/** What each shape, color and line of the timeline means, drawn with the timeline's own marks. */
+export function legendSvg(): { source: string; width: number; height: number } {
+  const W = 440
+  const COL = 228
+  const ROW = 22
+  const parts: string[] = [`<style>.lg { font-size: 12px; fill: #1f2328; } .lh { font-size: 12px; font-weight: 650; fill: var(--muted); } @media (prefers-color-scheme: dark) { .lg { fill: #e6edf3; } }</style>`]
+  const label = (x: number, y: number, text: string, cls = 'lg') => parts.push(`<text x="${x}" y="${y + 4}" class="${cls}">${esc(text)}</text>`)
+  // One column: a heading, then one row per mark (x, y are the mark's centre).
+  const column = (x0: number, y0: number, heading: string, marks: [(x: number, y: number) => string, string][]) => {
+    label(x0, y0, heading, 'lh')
+    marks.forEach(([draw, text], i) => {
+      const y = y0 + (i + 1) * ROW
+      parts.push(draw(x0 + 10, y))
+      label(x0 + 28, y, text)
+    })
+    return y0 + (marks.length + 1) * ROW + 10
+  }
+  const lane = (cls: string) => (x: number, y: number) => `<line x1="${x - 8}" y1="${y}" x2="${x + 8}" y2="${y}" ${cls}/>`
+  const block = (cls: string) => (x: number, y: number) => `<rect x="${x - 10}" y="${y - 7}" width="20" height="14" rx="4" class="${cls}"/>`
+  const y1 = column(4, 10, T.lgSteps, [
+    [(x, y) => `<circle cx="${x}" cy="${y}" r="7" class="done-fill"/><path d="M${x - 3.5} ${y} l2.5 2.6 l4.5 -5" class="check"/>`, T.lgDone],
+    [(x, y) => `<circle cx="${x}" cy="${y}" r="10" class="halo"/><circle cx="${x}" cy="${y}" r="6.5" class="doing-ring"/><circle cx="${x}" cy="${y}" r="2.5" class="doing-fill"/>`, T.lgDoing],
+    [(x, y) => `<circle cx="${x}" cy="${y}" r="6" class="todo-ring"/>`, T.lgTodo],
+    [(x, y) => `<circle cx="${x}" cy="${y}" r="7" class="blocked-fill"/><path d="M${x - 3} ${y - 3} l6 6 M${x + 3} ${y - 3} l-6 6" class="check"/>`, T.lgBlocked],
+    [(x, y) => `<circle cx="${x}" cy="${y}" r="5" class="todo-ring" opacity="0.5"/>`, T.lgDropped],
+    [(x, y) => `<path d="M${x} ${y - 7} l7 7 l-7 7 l-7 -7 Z" class="diamond-open"/>`, T.lgLate],
+  ])
+  column(4, y1, T.lgLanes, [
+    [lane('stroke="#639922" stroke-width="2.5"'), T.lgCurrent],
+    [lane('stroke="#888780" stroke-width="2.5"'), T.lgBase],
+    [lane('class="rail-todo"'), T.lgToCome],
+  ])
+  const y2 = column(COL, 10, T.lgMarks, [
+    [(x, y) => `<circle cx="${x}" cy="${y}" r="4.5" fill="#639922"/>`, T.lgCommit],
+    [(x, y) => `<circle cx="${x}" cy="${y}" r="4.5" fill="#BA7517"/>`, T.lgCommitElsewhere],
+    [(x, y) => `<path d="M${x} ${y - 5} l5 5 l-5 5 l-5 -5 Z" class="decision"/>`, T.lgDecision],
+    [(x, y) => `<line x1="${x - 10}" y1="${y}" x2="${x}" y2="${y}" class="stash-line"/><rect x="${x}" y="${y - 5}" width="10" height="10" rx="2" class="stash"/>`, T.lgStash],
+    [(x, y) => `<circle cx="${x}" cy="${y}" r="5" class="dirty"/>`, T.lgDirty],
+    [(x, y) => `<path d="M${x + 6} ${y - 9} C${x + 6} ${y + 2}, ${x - 6} ${y - 2}, ${x - 6} ${y + 9}" class="rail-todo" fill="none"/>`, T.lgMerge],
+  ])
+  const height = column(COL, y2, T.lgBlocks, [
+    [block('lg-current'), T.lgPhaseCurrent],
+    [block('lg-done'), T.lgPhaseDone],
+    [block('lg-future'), T.lgPhaseFuture],
+  ])
+  parts.push(`<style>.lg-current { fill: rgba(68,147,248,.12); stroke: var(--doing); } .lg-done { fill: none; stroke: var(--done); } .lg-future { fill: none; stroke: var(--muted); opacity: .7; }</style>`)
+  return { source: svgDoc(0, W, height, parts.join('')), width: W, height }
+}
+
 /** A row's identity across redraws: what "new" is measured against, and what a click opens. */
 export function rowKey(it: Item): string {
   if (it.kind === 'step') return `step:${it.s.title}`

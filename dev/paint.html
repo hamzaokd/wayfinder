@@ -98,7 +98,7 @@ function draw() {
 function press(key) {
   const next = new Set(flipped);
   next.has(key) ? next.delete(key) : next.add(key);
-  if (key.includes('-phase:') && DATA.trees[[...next].sort().join('|')] !== undefined) {
+  if (DATA.trees[[...next].sort().join('|')] !== undefined) {
     flipped.clear();
     next.forEach(k => flipped.add(k));
     draw();
