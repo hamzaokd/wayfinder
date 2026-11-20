@@ -59,7 +59,8 @@ export function items(v: GraphView): { list: Item[]; lanes: Lane[]; current: num
     const own = trail.steps.filter(s => s.phase === title)
     const state = phaseState(own)
     // A step dropped before it ever started says nothing about when its phase ran.
-    const starts = own.filter(s => s.status !== 'dropped' || s.startedAt !== undefined).map(s => s.startedAt ?? s.doneAt).filter((x): x is number => x !== undefined)
+    // Steps back at todo (started, then reset) don't count either: the phase sits with the future.
+    const starts = own.filter(s => s.status !== 'todo' && (s.status !== 'dropped' || s.startedAt !== undefined)).map(s => s.startedAt ?? s.doneAt).filter((x): x is number => x !== undefined)
     const ends = own.map(s => s.doneAt).filter((x): x is number => x !== undefined)
     return {
       title,
@@ -145,15 +146,14 @@ export function laneColor(lane: Lane, i: number): string {
   return lane.isBase ? '#888780' : lane.isCurrent ? '#639922' : LANE_COLORS[i % LANE_COLORS.length]!
 }
 
-/** What matters most about a step, in one short line. */
-export function stepLine(v: GraphView, s: Step): { text: string; cls: string } | undefined {
+/** At most one short tag after a step's title; the details are in its dialog. `isAlert` draws it in the warning color. */
+export function stepTag(v: GraphView, s: Step): { text: string; isAlert: boolean } | undefined {
   const isOpen = s.status !== 'done' && s.status !== 'dropped'
-  if (s.status === 'dropped') return { text: `Dropped · ${s.reason ?? 'no reason given'}`, cls: 'sub drift' }
-  if (s.addedLate) return { text: `Not in plan · ${s.reason ?? 'no reason given'}`, cls: 'sub drift' }
-  if (s.outOfOrder) return { text: 'Done before earlier steps', cls: 'sub drift' }
-  if (isStuck(v.trail, s)) return { text: `Stuck for ${v.trail.turn - (s.startedTurn ?? v.trail.turn)} turns`, cls: 'sub drift' }
-  if (isOpen && s.waitingOn === 'you') return { text: `waiting on you${s.waitingFor ? `: ${s.waitingFor}` : ''}`, cls: 'sub waiting' }
-  if (s.note) return { text: s.note, cls: 'sub' }
+  if (s.status === 'dropped') return { text: 'dropped', isAlert: false }
+  if (s.addedLate) return { text: 'not in plan', isAlert: true }
+  if (isOpen && s.waitingOn === 'you') return { text: 'waiting on you', isAlert: true }
+  if (isStuck(v.trail, s)) return { text: `stuck ${v.trail.turn - (s.startedTurn ?? v.trail.turn)} turns`, isAlert: true }
+  if (s.status === 'doing') return { text: 'you are here', isAlert: false }
   return undefined
 }
 
@@ -168,11 +168,11 @@ export function rowLabel(v: GraphView, it: Item): RowLabel | undefined {
   }
   if (it.kind === 'step') {
     const s = it.s
-    const line = stepLine(v, s)
+    const tag = stepTag(v, s)
     return {
       text: `${it.index + 1}. ${s.title}`,
-      tail: line ? ` · ${line.text}` : s.status === 'doing' ? ' · you are here' : undefined,
-      tailColor: line && line.cls !== 'sub' ? 'warning' : undefined,
+      tail: tag && ` · ${tag.text}`,
+      tailColor: tag?.isAlert ? 'warning' : undefined,
       color: s.status === 'doing' ? 'suggestion' : s.status === 'blocked' ? 'error' : undefined,
       dim: s.status === 'done' || s.status === 'todo' || s.status === 'dropped',
       strike: s.status === 'dropped',

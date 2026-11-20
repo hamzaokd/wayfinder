@@ -279,7 +279,7 @@ test('the pane: the graph, clicks on it, the dialog, and where actions go', asyn
     expect(await ui.find({ type: 'Text', text: /This session: Benchmark on 1M rows: run it on staging/ })).toBeTruthy()
     const graph = async () => (await ui.findAll({ type: 'Text' })).map(x => x.text).join('\n')
     expect(await graph()).toContain('2. Benchmark on 1M rows')
-    expect(await graph()).toContain(' · waiting on you: run it on staging')
+    expect(await graph()).toContain(' · waiting on you')
     expect(await graph()).toContain('bbbbbbb add writer')
 
     // A click on a row of the timeline: its text is a button, on every surface.
