@@ -4,7 +4,7 @@ import type { EngineInterface, Register } from 'claude-code'
 import type { RepoLive, Seen, Trail, TrailEvent } from '../types'
 import { git, isAncestor, repoGraph, repoRoot, snapshot } from './gitgraph'
 import { graphLanes, graphText, isPhaseOpen, phaseState } from './graph'
-import type { GraphRow, GraphView, RowLabel } from './graph'
+import type { GraphRow, GraphView, PhaseState, RowLabel } from './graph'
 import { langOf, setLang, T } from './i18n'
 import {
   ago,
@@ -42,6 +42,18 @@ const expanded = atom({ plugin: 'wayfinder', key: 'expanded' } as const, {}, { s
 // A side question's answer, shown in the pane and never added to the chat (like /btw).
 const aside = atom({ plugin: 'wayfinder', key: 'aside' } as const, null, { shape: 'aside-1' })
 const OTHERS_KEY = '__others'
+// A phase block's outline: blue while current, green once done, dim before it starts.
+const BLOCK: Record<PhaseState, string> = { current: 'suggestion', done: 'success', future: 'inactive' }
+/** Rows in runs of one phase (a phase's rows are together): each run is one block. */
+function runsOf(rows: readonly GraphRow[]): GraphRow[][] {
+  const runs: GraphRow[][] = []
+  for (const row of rows) {
+    const last = runs.at(-1)
+    if (last && last[0]!.phase === row.phase) last.push(row)
+    else runs.push([row])
+  }
+  return runs
+}
 // Row ids each repo's graph drew last time: what is new on the next draw animates in.
 const drawnRows = new Map<string, Set<string>>()
 // The last diagnostics, newest last. Saved with the session on each refresh, so a reload keeps them.
@@ -523,7 +535,16 @@ export const register: Register = on => {
         return [
           <Svg source={g.legend.source} alt={`Branches of ${r.name}`} width={g.legend.width} height={g.legend.height} />,
           ...(r.graph?.skipped ? [<Text dimColor>{T.olderCommits(r.graph.skipped)}</Text>] : []),
-          ...g.rows.filter(row => row.height > 0).map(row => rowOf(r, g, row)),
+          // A phase is a block: a native rounded box around its rows. Rows outside any phase get the same
+          // border, unseen, so every row's lanes start at the same x.
+          ...runsOf(g.rows.filter(row => row.height > 0)).map(run => {
+            const state = run[0]!.state
+            return (
+              <Box flexDirection="column" borderStyle="round" borderColor={state ? BLOCK[state] : 'transparent'} borderDimColor={state === 'future'} backgroundColor={state === 'current' ? 'rgba(68,147,248,0.08)' : undefined}>
+                {run.map(row => rowOf(r, g, row))}
+              </Box>
+            )
+          }),
         ]
       }
       return textGraph(r, view)
@@ -533,24 +554,16 @@ export const register: Register = on => {
       const l = row.label
       const id = l?.id
       return (
-        <Box key={`row-${r.name}-${row.key}`} flexDirection="row" alignItems="center" position="relative">
-          {/* The row's band of the drawing, full width, under its text; the spacer keeps the text clear of the lanes. */}
-          {Svg && (
-            <Box position="absolute" top={0} left={0}>
-              <Svg source={g.slice(row)} alt={l?.text ?? 'commit'} width={g.fullWidth} height={row.height} />
-            </Box>
+        // Nothing lies over the button: in the app a positioned layer over it took every click.
+        <Box key={`row-${r.name}-${row.key}`} flexDirection="row" alignItems="center">
+          {Svg && <Svg source={g.slice(row)} alt={l?.text ?? 'commit'} width={g.width} height={row.height} />}
+          {l && id ? (
+            <Button key={`press-${r.name}-${row.key}`} label={l.text} plain hover={{ underline: true }} onPress={() => void openRow($, id)}>
+              {labelParts(l)}
+            </Button>
+          ) : (
+            l && <Text wrap="truncate">{labelParts(l)}</Text>
           )}
-          {/* Positioned too, and after the drawing, so it paints over it and takes the clicks. */}
-          <Box position="relative" flexDirection="row" alignItems="center">
-            {Svg && <Svg source={g.spacer(row)} alt="" width={g.width} height={row.height} />}
-            {l && id ? (
-              <Button key={`press-${r.name}-${row.key}`} label={l.text} plain hover={{ underline: true }} onPress={() => void openRow($, id)}>
-                {labelParts(l)}
-              </Button>
-            ) : (
-              l && <Text wrap="truncate">{labelParts(l)}</Text>
-            )}
-          </Box>
         </Box>
       )
     }

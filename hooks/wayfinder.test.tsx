@@ -153,7 +153,7 @@ test('the graph puts steps on their branch, folds finished phases, and plans the
   // Each row shows its own band of one drawing, and the bands tile it with no gap.
   g.rows.forEach((r, i) => i > 0 && expect(r.top).toBe(g.rows[i - 1]!.top + g.rows[i - 1]!.height))
   const second = g.rows[1]!
-  expect(g.slice(second)).toContain(`viewBox="0 ${second.top} ${g.fullWidth} ${second.height}"`)
+  expect(g.slice(second)).toContain(`viewBox="0 ${second.top} ${g.width} ${second.height}"`)
   // Nothing animates on a first draw; drawn again with a step that wasn't there, it eases in.
   expect(g.slice(second)).not.toContain('class="enter"')
   const again = graphLanes({ ...view, trail: { ...t, steps: [...t.steps, { ...t.steps[2]!, title: 'Docs' }] } }, new Set(g.rows.map(r => r.key)))
@@ -316,8 +316,13 @@ test('the pane: the graph, clicks on it, the dialog, and where actions go', asyn
     expect(forked).toContain('what does step 3 "Open PR" involve')
     expect(await ui.find({ type: 'Text', text: /It streams rows to stay under 200 MB\./ })).toBeTruthy()
     await ui.press({ key: 'aside-close' })
-    // Each phase is a rounded block drawn behind its rows.
-    if (surface === 'desktop') expect(JSON.stringify(await ui.find({ type: 'Box' }))).toContain('class=\\"block-current\\"')
+    if (surface === 'desktop') {
+      const tree = JSON.stringify(await ui.find({ type: 'Box' }))
+      // Each phase is a native rounded box around its rows, blue while current.
+      expect(tree).toContain('"borderStyle":"round","borderColor":"suggestion"')
+      // Nothing is positioned over the rows: in the app such a layer took every click.
+      expect(tree).not.toContain('"position":"absolute"')
+    }
     await ui.unmount()
   }
 
