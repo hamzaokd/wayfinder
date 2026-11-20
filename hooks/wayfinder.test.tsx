@@ -480,3 +480,43 @@ test('files another session edits too: a card in the pane, and one note to Claud
   expect(await ui.find({ type: 'Text', text: /^• auth\.ts$/ })).toBeTruthy()
   await ui.unmount()
 })
+
+test('/wayfinder-forget hides other sessions until they move; /wayfinder-lang switches the pane', async ($, on) => {
+  const NOW = 50_000_000
+  const self = { ...applyPlan(emptyTrail('me', 0), { goal: 'Mine', phases: plan([['P', 'A', 'doing']]) }, ctx(1)), updatedAt: NOW }
+  const other = { ...applyPlan(emptyTrail('o1', 0), { goal: 'Old work', phases: plan([['P', 'B', 'doing']]) }, ctx(1)), updatedAt: NOW - 3_600_000 }
+  // A store the test can write to, as another session would.
+  const store: Record<string, unknown> = { 'trail2:me': self, 'trail2:o1': other }
+  on('store.get', (_, e) => ({ value: store[e.key] }))
+  on('store.set', (_, e) => ((store[e.key] = e.value), { value: undefined }))
+  on('store.delete', (_, e) => (delete store[e.key], { value: undefined }))
+  on('store.keys', () => ({ value: Object.keys(store) }))
+  const clock = mock.clock(on, { now: NOW })
+  fakeGit(on, { head: H('a'), log: '' })
+  on('session.id', () => ({ value: 'me' }))
+  on('tool.register', () => ({ value: { tool: PROGRESS_TOOL } }))
+  on('command.register', (_, e) => ({ value: { command: e.name } }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('ui.status', () => ({ value: undefined }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  await $.session.start({ cwd: 'C:/r', surface: 'desktop', isInteractive: true })
+  await clock.advance(16_000)
+  const run = async (command: string, args = '') => (await $.command.run({ command, args, origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } })).text
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  const listed = async () => !!(await ui.find({ key: 'others-toggle' }))
+
+  expect(await listed()).toBe(true)
+  expect(await run('wayfinder-forget')).toBe('Hid 1 other session from the pane. One that moves again comes back; their plans are kept.')
+  expect(await listed()).toBe(false)
+  // The other session records progress: it comes back.
+  store['trail2:o1'] = { ...other, updatedAt: NOW + 20_000 }
+  await clock.advance(16_000)
+  expect(await listed()).toBe(true)
+
+  expect(await run('wayfinder-lang', 'de')).toContain('Usage: /wayfinder-lang fr')
+  expect(await run('wayfinder-lang', 'fr')).toBe('Le panneau Wayfinder est maintenant en français, dans toutes les sessions.')
+  expect(await ui.find({ type: 'Text', text: /^OBJECTIF$/ })).toBeTruthy()
+  expect(await run('wayfinder-lang', 'auto')).toContain("follows Claude Code's language setting")
+  expect(await ui.find({ type: 'Text', text: /^GOAL$/ })).toBeTruthy()
+  await ui.unmount()
+})

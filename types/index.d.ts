@@ -113,6 +113,7 @@ declare module 'claude-code' {
       others: Shaped<Trail[]>
       expanded: Shaped<Record<string, boolean>>
       aside: Shaped<{ title: string; text?: string; isLoading: boolean } | null>
+      lang: Shaped<'en' | 'fr'>
     }
   }
 }

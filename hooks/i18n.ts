@@ -111,7 +111,11 @@ const EN = {
   // Commands
   cmdPaused: 'Wayfinder paused in every session: no git polling, no notes to Claude, no plan tool. /wayfinder-start resumes it.',
   cmdResumed: 'Wayfinder resumed.',
-  cmdUsage: 'Commands: /wayfinder (open the pane), /wayfinder-pause, /wayfinder-start',
+  cmdUsage: 'Commands: /wayfinder (open the pane), /wayfinder-pause, /wayfinder-start, /wayfinder-forget, /wayfinder-lang fr|en|auto',
+  cmdForgot: (k: number) => (k ? `Hid ${n(k, 'other session', 'other sessions')} from the pane. One that moves again comes back; their plans are kept.` : 'No other session to hide.'),
+  cmdLang: 'The Wayfinder pane is now in English, in every session.',
+  cmdLangAuto: "The pane follows Claude Code's language setting again: French if it names French, English otherwise.",
+  cmdLangUsage: "Usage: /wayfinder-lang fr, /wayfinder-lang en, or /wayfinder-lang auto (follow Claude Code's language setting).",
   cmdOpened: 'Wayfinder pane opened.',
 }
 
@@ -214,7 +218,11 @@ const FR: typeof EN = {
   pExplainCommit: (hash, subject) => `En quelques lignes : qu’a changé le commit ${hash} (« ${subject} »), et comment s’inscrit-il dans le plan ?`,
   cmdPaused: 'Wayfinder est en pause dans toutes les sessions : plus de lecture git, plus de notes à Claude, plus d’outil de plan. /wayfinder-start le relance.',
   cmdResumed: 'Wayfinder relancé.',
-  cmdUsage: 'Commandes : /wayfinder (ouvrir le panneau), /wayfinder-pause, /wayfinder-start',
+  cmdUsage: 'Commandes : /wayfinder (ouvrir le panneau), /wayfinder-pause, /wayfinder-start, /wayfinder-forget, /wayfinder-lang fr|en|auto',
+  cmdForgot: k => (k ? `${n(k, 'autre session masquée', 'autres sessions masquées')} du panneau. Une session qui avance à nouveau revient ; leurs plans sont gardés.` : 'Aucune autre session à masquer.'),
+  cmdLang: 'Le panneau Wayfinder est maintenant en français, dans toutes les sessions.',
+  cmdLangAuto: 'Le panneau suit à nouveau le réglage de langue de Claude Code : français s’il le demande, anglais sinon.',
+  cmdLangUsage: 'Utilisation : /wayfinder-lang fr, /wayfinder-lang en, ou /wayfinder-lang auto (suivre le réglage de langue de Claude Code).',
   cmdOpened: 'Panneau Wayfinder ouvert.',
 }
 

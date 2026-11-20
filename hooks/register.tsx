@@ -43,6 +43,11 @@ const others = atom({ plugin: 'wayfinder', key: 'others' } as const, [], { shape
 const expanded = atom({ plugin: 'wayfinder', key: 'expanded' } as const, {}, { shape: 'expanded-1' })
 // A side question's answer, shown in the pane and never added to the chat (like /btw).
 const aside = atom({ plugin: 'wayfinder', key: 'aside' } as const, null, { shape: 'aside-1' })
+// The pane's language; the pane reads it, so a change redraws it.
+const langNow = atom({ plugin: 'wayfinder', key: 'lang' } as const, 'en', { shape: 'lang-1' })
+// Shared by every session: /wayfinder-lang's choice, and the other sessions /wayfinder-forget hid (id -> its updatedAt then).
+const LANG_KEY = 'lang'
+const FORGOTTEN_KEY = 'forgotten'
 const OTHERS_KEY = '__others'
 // A phase block's outline: blue while current, green once done, dim before it starts.
 const BLOCK: Record<PhaseState, string> = { current: 'suggestion', done: 'success', future: 'inactive' }
@@ -243,12 +248,29 @@ async function refreshOthers($: $): Promise<void> {
   const now = await $.clock.now()
   const keys = (await $.store.keys()).filter(k => k.startsWith(PREFIX) && k !== PREFIX + sessionId)
   const all = await Promise.all(keys.map(k => $.store.get(k)))
+  // A session hidden by /wayfinder-forget comes back once it moves again.
+  const forgotten = ((await $.store.get(FORGOTTEN_KEY)) ?? {}) as Record<string, number>
   const list = (all as Trail[])
     // A value that isn't a trail (hand-edited, half-written) is left out of the list, not repaired.
     .filter(t => t && Array.isArray(t.steps) && Array.isArray(t.events) && now - t.updatedAt < OTHERS_DAYS * 86_400_000)
+    .filter(t => !((forgotten[t.sessionId] ?? -1) >= t.updatedAt))
     .sort((a, b) => b.updatedAt - a.updatedAt)
     .slice(0, 8)
   if (JSON.stringify(await read($, others)) !== JSON.stringify(list)) await update($, others, () => list)
+}
+
+/** The pane's language: /wayfinder-lang's choice, else Claude Code's `language` setting; English when neither names French. */
+async function applyLang($: $): Promise<void> {
+  const chosen = await $.store.get(LANG_KEY)
+  const lang =
+    chosen === 'fr' || chosen === 'en'
+      ? chosen
+      : langOf(await $.settings.read({ key: 'language' }).catch(err => (note(`language setting unreadable: ${String(err).slice(0, 120)}`), undefined)))
+  setLang(lang)
+  if ((await read($, langNow)) !== lang) {
+    note(`language: ${lang}${chosen === 'fr' || chosen === 'en' ? ' (/wayfinder-lang)' : ''}`)
+    await update($, langNow, () => lang)
+  }
 }
 
 async function tick($: $): Promise<void> {
@@ -258,6 +280,8 @@ async function tick($: $): Promise<void> {
     paused = (await $.store.get(PAUSED_KEY)) === true
     if (paused !== was) await registerProgress($)
     if (paused) return
+    // Another session may have changed the language with /wayfinder-lang.
+    await applyLang($)
     await refreshOthers($)
     await sync($, isInTurn ? 'session' : 'outside')
     await $.store.set(DIAG_KEY + sessionId, diag)
@@ -398,9 +422,7 @@ export const register: Register = on => {
     const stored = (await $.store.get(PREFIX + sessionId)) as Trail | undefined
     await update($, trail, () => stored ?? emptyTrail(sessionId, now))
     // French when Claude Code's `language` setting names it; English for any other language or none.
-    const language = await $.settings.read({ key: 'language' }).catch(err => (note(`language setting unreadable: ${String(err).slice(0, 120)}`), undefined))
-    setLang(langOf(language))
-    note(`language: ${langOf(language)} (setting: ${JSON.stringify(language ?? null)})`)
+    await applyLang($)
     paused = (await $.store.get(PAUSED_KEY)) === true
     await registerProgress($)
     await $.tool.register({ name: 'debug', description: "Returns Wayfinder's recent diagnostics: what the pane drew, clicks on the graph and how they were handled. Read-only.", isDeferred: true })
@@ -408,6 +430,8 @@ export const register: Register = on => {
     await $.command.register({ name: 'wayfinder', description: 'Open the Wayfinder pane: plan, branch graph and what waits on you' })
     await $.command.register({ name: 'wayfinder-pause', description: 'Pause Wayfinder in every session: no git polling, no notes to Claude, plan tool hidden' })
     await $.command.register({ name: 'wayfinder-start', description: 'Resume Wayfinder after /wayfinder-pause' })
+    await $.command.register({ name: 'wayfinder-forget', description: 'Hide the other sessions now listed until they move again (their saved plans stay)' })
+    await $.command.register({ name: 'wayfinder-lang', description: "The pane's language in every session: fr, en, or auto (Claude Code's language setting)", argumentHint: 'fr|en|auto' })
     if (!paused) void $.ui.open({ id: PANE, title: 'Wayfinder' })
     const cwd = normPath(e.cwd)
     await track($, cwd)
@@ -433,6 +457,24 @@ export const register: Register = on => {
     await registerProgress($)
     await $.ui.close({ id: PANE })
     return { text: T.cmdPaused }
+  })
+
+  on('command.run', { command: 'wayfinder-forget' }, async $ => {
+    const rest = await read($, others)
+    const forgotten = { ...(((await $.store.get(FORGOTTEN_KEY)) ?? {}) as Record<string, number>) }
+    for (const o of rest) forgotten[o.sessionId] = o.updatedAt
+    await $.store.set(FORGOTTEN_KEY, forgotten)
+    await refreshOthers($)
+    return { text: T.cmdForgot(rest.length) }
+  })
+
+  on('command.run', { command: 'wayfinder-lang' }, async ($, e) => {
+    const arg = e.args.trim().toLowerCase()
+    if (arg !== 'fr' && arg !== 'en' && arg !== 'auto') return { text: T.cmdLangUsage }
+    if (arg === 'auto') await $.store.delete(LANG_KEY)
+    else await $.store.set(LANG_KEY, arg)
+    await applyLang($)
+    return { text: arg === 'auto' ? T.cmdLangAuto : T.cmdLang }
   })
 
   on('command.run', { command: 'wayfinder-start' }, async $ => {
@@ -514,6 +556,7 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const els = $.ui.resolve(e)
+    setLang(await read($, langNow))
     const { Box, Text, Button } = els
     // Desktop, editor and mobile draw Svg; the terminal gets the lanes in characters.
     const Svg = e.surface !== 'terminal' && 'Svg' in els ? els.Svg : undefined

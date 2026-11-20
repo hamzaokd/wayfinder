@@ -26,7 +26,7 @@ On another machine, at the prompt of a session (the repository is private, so th
 
 Answer `y` to add the marketplace, then pick a scope (user = every session).
 
-The pane speaks French when Claude Code's `language` setting names French (`"language": "french"` in `~/.claude/settings.json`), and English otherwise. Open the pane with `/wayfinder`. `/wayfinder-pause` stops it in every session (no git polling, no notes to Claude, the plan tool moves behind ToolSearch); `/wayfinder-start` resumes it.
+The pane speaks French when Claude Code's `language` setting names French (`"language": "french"` in `~/.claude/settings.json`), and English otherwise. Open the pane with `/wayfinder`. `/wayfinder-pause` stops it in every session (no git polling, no notes to Claude, the plan tool moves behind ToolSearch); `/wayfinder-start` resumes it. `/wayfinder-forget` hides the other sessions listed now until they move again (their plans stay saved). `/wayfinder-lang fr`, `en` or `auto` sets the pane's language in every session; `auto` follows Claude Code's `language` setting.
 
 ## Develop
 
