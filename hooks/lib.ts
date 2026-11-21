@@ -351,15 +351,38 @@ export function sharedFiles(self: Trail, others: readonly Trail[], now: number):
     .filter(o => o.files.length > 0)
 }
 
-export type WaitingItem ={ session: string; isSelf: boolean; step: string; what?: string }
+export type WaitingItem = { sessionId: string; session: string; isSelf: boolean; step: string; what?: string; link?: string }
 
-/** Every open step, in every session, that waits on the user. */
-export function waitingOnYou(self: Trail, others: readonly Trail[]): WaitingItem[] {
+/** Waits the user cleared from a pane, shared by every session: `sessionId\0step title` -> when. */
+export type Cleared = Record<string, number>
+export const clearKey = (sessionId: string, step: string) => `${sessionId}\u0000${step}`
+
+/** The desktop app's link to a session, from its own id; none for a terminal session or an id of another shape. */
+export const sessionLink = (hostId?: string) => (hostId && /^local_[0-9a-f-]{36}$/.test(hostId) ? `claude://claude.ai/epitaxy/${hostId}` : undefined)
+
+/** Every open step, in every session, that waits on the user, less the ones they cleared. */
+export function waitingOnYou(self: Trail, others: readonly Trail[], cleared: Cleared = {}): WaitingItem[] {
   return [self, ...others].flatMap(t =>
     t.steps
-      .filter(s => isOpen(s) && s.waitingOn === 'you')
-      .map(s => ({ session: t.goal ?? T.noGoal, isSelf: t === self, step: s.title, what: s.waitingFor })),
+      .filter(s => isOpen(s) && s.waitingOn === 'you' && !(clearKey(t.sessionId, s.title) in cleared))
+      .map(s => ({ sessionId: t.sessionId, session: t.goal ?? T.noGoal, isSelf: t === self, step: s.title, what: s.waitingFor, link: sessionLink(t.hostId) })),
   )
+}
+
+/** This session's cleared waits taken off its steps, with a note for Claude; `done` are the keys it handled. */
+export function applyCleared(t: Trail, cleared: Cleared): { trail: Trail; done: string[] } {
+  const done = Object.keys(cleared).filter(k => k.startsWith(`${t.sessionId}\u0000`))
+  const titles = new Set(done.map(k => k.slice(t.sessionId.length + 1)))
+  const hit = t.steps.filter(s => titles.has(s.title) && s.waitingOn === 'you')
+  if (!hit.length) return { trail: t, done }
+  return {
+    trail: {
+      ...t,
+      steps: t.steps.map(s => (hit.includes(s) ? { ...s, waitingOn: undefined, waitingFor: undefined } : s)),
+      pending: [...t.pending, ...hit.map(s => `The user cleared the wait on step ${quoted(s.title)} in the Wayfinder pane: they did it outside Claude, or it no longer matters. Don't ask for it again; update the step with ${PROGRESS_TOOL}.`)].slice(-10),
+    },
+    done,
+  }
 }
 
 export type StashLite = { at: number; subject: string }

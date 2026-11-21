@@ -11,7 +11,9 @@ const MIN = 60_000
 
 test('preview', { options: { autoStart: /*AUTOSTART*/ true } }, async ($, on) => {
   const repo = { head: H('c'), log: '' }
-  mock.store(on)
+  // Another desktop session waiting on you: its name links to its chat.
+  const login = { sessionId: 'login', hostId: 'local_11111111-2222-3333-4444-555555555555', goal: 'Fix login redirect', phases: ['P'], steps: [{ title: 'Confirm the SSO callback URL', phase: 'P', status: 'doing', waitingOn: 'you', waitingFor: 'check it in the Okta admin', files: [] }], decisions: [], events: [], seen: {}, turn: 3, planTurn: 3, planVersion: 1, commitsSincePlan: 0, pending: [], hasNudged: true, updatedAt: 1_800_000_000_000 + 80 * MIN, lastPromptAt: 1_800_000_000_000 + 80 * MIN, unplannedFiles: [] }
+  mock.store(on, { 'trail2:login': login })
   const dialogs = captureDialogs(on)
   on('settings.read', () => ({ value: { language: /*LANG*/ 'english' } }))
   const clock = mock.clock(on, { now: 1_800_000_000_000 })
@@ -47,6 +49,7 @@ test('preview', { options: { autoStart: /*AUTOSTART*/ true } }, async ($, on) =>
     return { value: { exitCode: 1, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
   })
   on('session.id', () => ({ value: 'preview' }))
+  on('env.get', () => ({ value: undefined }))
   on('tool.register', () => ({ value: { tool: PROGRESS_TOOL } }))
   on('command.register', () => ({ value: { command: 'wayfinder' } }))
   on('ui.open', () => ({ value: { isPlaced: true } }))

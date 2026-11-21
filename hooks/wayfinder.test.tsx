@@ -4,7 +4,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { RepoLive } from '../types'
 import { GIT } from './gitgraph'
 import { graphLanes, graphText, items } from './graph'
-import { applyPlan, attributeEdits, chatStatus, dirsFromToolUse, emptyTrail, normPath, PROGRESS_TOOL, quoted, rebuildFromHistory, sharedFiles, sinceYouLeft, stepMenu, waitingOnYou } from './lib'
+import { applyCleared, applyPlan, attributeEdits, chatStatus, clearKey, dirsFromToolUse, emptyTrail, normPath, PROGRESS_TOOL, quoted, rebuildFromHistory, sharedFiles, sinceYouLeft, stepMenu, waitingOnYou } from './lib'
 import { langOf, setLang } from './i18n'
 
 const PANE = {
@@ -93,6 +93,18 @@ test('waiting on you, and since you left', () => {
   const self = applyPlan(emptyTrail('s1', 0), { goal: 'CSV', phases: [{ title: 'P', steps: [{ title: 'Bench', status: 'todo', waitingOn: 'you', waitingFor: 'run on staging' }] }] }, ctx(1))
   const other = { ...applyPlan(emptyTrail('s2', 0), { goal: 'Login', phases: [{ title: 'P', steps: [{ title: 'Answer', status: 'doing', waitingOn: 'you' }] }] }, ctx(1)), updatedAt: 50 * 60_000 }
   expect(waitingOnYou(self, [other]).map(w => `${w.isSelf}:${w.step}:${w.what ?? ''}`)).toEqual(['true:Bench:run on staging', 'false:Answer:'])
+  // Cleared from a pane: hidden everywhere, and the owning session drops the wait and tells Claude.
+  const gone = { [clearKey('s2', 'Answer')]: 1, [clearKey('s1', 'Bench')]: 1 }
+  expect(waitingOnYou(self, [other], gone)).toEqual([])
+  const applied = applyCleared(self, gone)
+  expect(applied.done).toEqual([clearKey('s1', 'Bench')])
+  expect(applied.trail.steps[0]!.waitingOn).toBeUndefined()
+  expect(applied.trail.pending.at(-1)).toContain('"Bench"')
+  expect(applyCleared(applied.trail, gone).trail).toBe(applied.trail)
+  // A link only for a desktop id of the expected shape.
+  const id = 'local_80ad9ce7-6099-4351-8bbd-dcd8d59d9c50'
+  expect(waitingOnYou(self, [{ ...other, hostId: id }])[1]!.link).toBe(`claude://claude.ai/epitaxy/${id}`)
+  expect(waitingOnYou(self, [{ ...other, hostId: 'javascript:alert(1)' }])[1]!.link).toBeUndefined()
   const back = { ...self, lastPromptAt: 0, events: [{ at: 10, kind: 'commit' as const, origin: 'outside' as const, repo: 'api', text: 'x', hash: 'h' }] }
   expect(sinceYouLeft(back, [other], [], 5 * 60_000)).toBeUndefined()
   const card = sinceYouLeft(back, [other], [{ at: 30 * 60_000, subject: 'WIP' }], 60 * 60_000)!
@@ -189,8 +201,11 @@ test('a click on a step offers what fits it: work goes to the session, questions
 })
 
 // A fake repo at C:/r on feature/x, one commit ahead of main. `head` moves when the test commits "outside".
+// What the pane handed the system's opener (a chat's claude:// link), across tests.
+const opened: (readonly string[])[] = []
 function fakeGit(on: On, repo: { head: string; log: string }) {
   on('process.run', (_, e) => {
+    if (e.argv.at(-1)?.startsWith('claude://')) return opened.push(e.argv), { value: { exitCode: 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
     // Every git call the mod makes is hardened against the repo's own config.
     expect(e.argv.slice(0, GIT.length)).toEqual([...GIT])
     const a = e.argv.slice(GIT.length).join(' ')
@@ -221,6 +236,7 @@ test('the pane: the graph, clicks on it, the dialog, and where actions go', { op
   const clock = mock.clock(on, { now: 1_000_000 })
   fakeGit(on, repo)
   on('session.id', () => ({ value: 's1' }))
+  on('env.get', () => ({ value: undefined }))
   on('tool.register', () => ({ value: { tool: PROGRESS_TOOL } }))
   on('command.register', (_, e) => ({ value: { command: e.name } }))
   let opened = 0
@@ -397,6 +413,7 @@ test('a fork opens with the plan its conversation carries', async ($, on) => {
   mock.clock(on, { now: 1_000_000 })
   fakeGit(on, { head: H('a'), log: '' })
   on('session.id', () => ({ value: 'fork-1' }))
+  on('env.get', () => ({ value: undefined }))
   on('session.messages', () => ({
     value: [
       { role: 'assistant', text: '', toolUses: [{ tool_use_id: 't1', tool: PROGRESS_TOOL, input: { goal: 'Add CSV export', phases: plan([['Build', 'Writer', 'doing'], ['Build', 'PR', 'todo']]) } }] },
@@ -424,6 +441,7 @@ test('the pane follows a French language setting, and is English otherwise', { o
   fakeGit(on, { head: H('a'), log: '' })
   on('settings.read', () => ({ value: { language: 'french' } }))
   on('session.id', () => ({ value: 'fr-1' }))
+  on('env.get', () => ({ value: undefined }))
   on('session.messages', () => ({ value: [] }))
   on('tool.register', () => ({ value: { tool: PROGRESS_TOOL } }))
   on('command.register', (_, e) => ({ value: { command: e.name } }))
@@ -484,6 +502,7 @@ test('the goal says it is achieved once every step is done', { options: { autoSt
   mock.clock(on, { now: 1_000_000 })
   fakeGit(on, { head: H('a'), log: '' })
   on('session.id', () => ({ value: 'done-1' }))
+  on('env.get', () => ({ value: undefined }))
   on('session.messages', () => ({ value: [] }))
   on('tool.register', () => ({ value: { tool: PROGRESS_TOOL } }))
   on('command.register', (_, e) => ({ value: { command: e.name } }))
@@ -505,6 +524,38 @@ test('the goal says it is achieved once every step is done', { options: { autoSt
   await ui.unmount()
 })
 
+test('a waiting item: Clear drops it and tells Claude; another desktop session links to its chat', { options: { autoStart: true } }, async ($, on) => {
+  const host = 'local_11111111-2222-3333-4444-555555555555'
+  const other = { ...applyPlan(emptyTrail('w-2', 0), { goal: 'Login', phases: [{ title: 'P', steps: [{ title: 'Answer', status: 'doing', waitingOn: 'you' }] }] }, ctx(1)), hostId: host, updatedAt: 999_000 }
+  mock.store(on, { 'trail2:w-2': other })
+  const clock = mock.clock(on, { now: 1_000_000 })
+  fakeGit(on, { head: H('a'), log: '' })
+  on('session.id', () => ({ value: 'w-1' }))
+  on('env.get', (_, e) => ({ value: e.name === 'OS' ? 'Windows_NT' : 'local_aaaaaaaa-2222-3333-4444-555555555555' }))
+  on('session.messages', () => ({ value: [] }))
+  on('tool.register', () => ({ value: { tool: PROGRESS_TOOL } }))
+  on('command.register', (_, e) => ({ value: { command: e.name } }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('ui.status', () => ({ value: undefined }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  let context: readonly string[] = []
+  on('prompt.submit', (_, e) => ((context = e.context ?? []), { text: e.text, context: e.context }))
+  await $.session.start({ cwd: 'C:/r', surface: 'desktop', isInteractive: true })
+  await clock.advance(16_000)
+  await $.tool.call({ tool: PROGRESS_TOOL, goal: 'CSV', phases: [{ title: 'P', steps: [{ title: 'Bench', status: 'doing', waitingOn: 'you', waitingFor: 'run on staging' }] }] })
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  // Its name opens its chat through the system's opener: a pane draws only https links.
+  await ui.press({ key: 'chat-w-2' })
+  expect(opened.at(-1)).toEqual(['cmd.exe', '/c', 'start', '', `claude://claude.ai/epitaxy/${host}`])
+  await ui.press({ key: `clear-${clearKey('w-1', 'Bench')}` })
+  expect(await ui.find({ type: 'Text', text: 'Waiting on you · 1' })).toBeTruthy()
+  expect(await ui.find({ type: 'Text', text: /• Answer/ })).toBeTruthy()
+  expect(await ui.find({ type: 'Text', text: /• Bench/ })).toBeFalsy()
+  await $.prompt.submit({ text: 'hi', wait: false, origin: { kind: 'composer' } })
+  expect(context.join('\n')).toContain('cleared the wait on step "Bench"')
+  await ui.unmount()
+})
+
 test('files another session edits too: a card in the pane, and one note to Claude', async ($, on) => {
   const NOW = 50_000_000
   const edited = (id: string, goal: string, root: string, files: string[], updatedAt: number) => {
@@ -522,6 +573,7 @@ test('files another session edits too: a card in the pane, and one note to Claud
   const clock = mock.clock(on, { now: NOW })
   fakeGit(on, { head: H('a'), log: '' })
   on('session.id', () => ({ value: 's-ov' }))
+  on('env.get', () => ({ value: undefined }))
   on('tool.register', () => ({ value: { tool: PROGRESS_TOOL } }))
   on('command.register', (_, e) => ({ value: { command: e.name } }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
@@ -560,6 +612,7 @@ test('/wayfinder-forget hides other sessions until they move; /wayfinder-lang sw
   const clock = mock.clock(on, { now: NOW })
   fakeGit(on, { head: H('a'), log: '' })
   on('session.id', () => ({ value: 'me' }))
+  on('env.get', () => ({ value: undefined }))
   on('tool.register', () => ({ value: { tool: PROGRESS_TOOL } }))
   on('command.register', (_, e) => ({ value: { command: e.name } }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
@@ -592,6 +645,7 @@ test('the legend unfolds under the timeline and draws every mark', { options: { 
   const clock = mock.clock(on, { now: 1_000_000 })
   fakeGit(on, { head: H('a'), log: '' })
   on('session.id', () => ({ value: 'lg-1' }))
+  on('env.get', () => ({ value: undefined }))
   on('session.messages', () => ({ value: [] }))
   on('tool.register', () => ({ value: { tool: PROGRESS_TOOL } }))
   on('command.register', (_, e) => ({ value: { command: e.name } }))
@@ -615,6 +669,7 @@ test('settings: the pane changes them through Claude Code settings, and a refuse
   const clock = mock.clock(on, { now: 1_000_000 })
   fakeGit(on, { head: H('a'), log: '' })
   on('session.id', () => ({ value: 'set-1' }))
+  on('env.get', () => ({ value: undefined }))
   on('session.messages', () => ({ value: [] }))
   on('tool.register', () => ({ value: { tool: PROGRESS_TOOL } }))
   on('command.register', (_, e) => ({ value: { command: e.name } }))

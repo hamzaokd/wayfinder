@@ -27,6 +27,7 @@ test('live preview', { options: { autoStart: /*AUTOSTART*/ true } }, async ($, o
     return { value: { exitCode: known?.exitCode ?? 1, stdout: known?.stdout ?? '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
   })
   on('session.id', () => ({ value: SESSION }))
+  on('env.get', () => ({ value: undefined }))
   on('session.messages', () => ({ value: [] }))
   on('tool.register', () => ({ value: { tool: PROGRESS_TOOL } }))
   on('command.register', () => ({ value: { command: 'wayfinder' } }))

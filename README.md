@@ -6,6 +6,7 @@ A Claude Code mod that keeps a pane beside the chat answering "where are we?":
 - **Repos**: every git repo the session touched, with live branch, uncommitted changes, commits ahead of the base branch and ahead/behind upstream.
 - **Timeline**: branch switches, commits, finished steps. Commits made outside the session (by you or another session) are flagged, and Claude gets a note about them on your next message. Rewritten history (rebase, reset, amend) is flagged as such.
 - **Status strip**: a thin outlined line above the message box, colored by where the work stands: blue working on a step, orange waiting on you or stuck, red blocked, purple off plan (the plan changed this turn, or the current step wasn't in it), green goal reached. Nothing without a plan.
+- **Waiting on you**: a card listing every step, in any session, that waits on you. **Clear** removes one you did outside Claude or no longer care about: it disappears from every pane, and that session's Claude is told on your next message there. In the desktop app, **Open chat ↗** beside another session opens that chat (once that session has run this version: it saves its desktop id when it starts).
 - **Other sessions**: a read-only list of your other sessions where Wayfinder is on, from the last 7 days, with their goal and current step. Only one thing about them reaches Claude: files both sessions edited in the last day, with the other session's goal, once per file, so it checks before touching them.
 
 Data is saved per session in Claude Code's own plugin store, never in your repos.

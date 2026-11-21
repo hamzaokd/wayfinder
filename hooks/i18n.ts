@@ -39,6 +39,8 @@ const EN = {
   waitingOnYou: 'Waiting on you',
   sharedTitle: '⚠ Also edited in another session',
   thisSession: 'This session',
+  clearWait: 'Clear',
+  openChat: 'Open chat ↗',
   noGoal: '(no goal yet)',
   sinceYouLeft: (away: string) => `Since you left (${away} ago)`,
   next: 'Next:',
@@ -157,6 +159,7 @@ const EN = {
   setMax: (k: number) => `List at most ${k} other sessions`,
   setNote: 'Saved in Claude Code settings. Other open sessions use it after /reload-plugins.',
   setFailed: (why: string) => `Setting not saved: ${why}`,
+  openChatFailed: (why: string) => `Could not open that chat: ${why}`,
 }
 
 const FR: typeof EN = {
@@ -189,6 +192,8 @@ const FR: typeof EN = {
   waitingOnYou: 'En attente de toi',
   sharedTitle: '⚠ Aussi modifié dans une autre session',
   thisSession: 'Cette session',
+  clearWait: 'Retirer',
+  openChat: 'Ouvrir ↗',
   noGoal: '(pas encore de but)',
   sinceYouLeft: away => `Depuis ton départ (il y a ${away})`,
   next: 'Ensuite :',
@@ -302,6 +307,7 @@ const FR: typeof EN = {
   setMax: k => `Lister au plus ${k} autres sessions`,
   setNote: 'Enregistré dans les réglages de Claude Code. Les autres sessions ouvertes l’utilisent après /reload-plugins.',
   setFailed: why => `Réglage non enregistré : ${why}`,
+  openChatFailed: why => `Impossible d’ouvrir cette conversation : ${why}`,
 }
 
 export type Lang = 'en' | 'fr'

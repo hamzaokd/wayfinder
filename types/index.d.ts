@@ -44,6 +44,8 @@ export type Seen = { branch: string; heads: Record<string, string> }
 
 export type Trail = {
   sessionId: string
+  /** The desktop app's id for this session (`local_...`), for a link from other panes; unset in a terminal. */
+  hostId?: string
   goal?: string
   whereWasI?: string
   phases: string[]
@@ -116,6 +118,7 @@ declare module 'claude-code' {
       repos: Shaped<RepoLive[]>
       others: Shaped<Trail[]>
       expanded: Shaped<Record<string, boolean>>
+      cleared: Shaped<Record<string, number>>
       aside: Shaped<{ title: string; text?: string; isLoading: boolean } | null>
       lang: Shaped<'en' | 'fr'>
       settings: Shaped<{ autoStart: boolean; othersDays: number; maxOthers: number }>
