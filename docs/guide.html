@@ -7,12 +7,12 @@
 <style>
   :root {
     --bg: #fbfaf7; --fg: #1f1d1a; --dim: #6b665e; --line: #e4e0d8; --card: #ffffff;
-    --blue: #2f6fd6; --orange: #c2700c; --red: #c23a2b; --green: #2e8a4a; --purple: #7a4fc9; --code: #f1eee8;
+    --blue: #2f6fd6; --orange: #c2700c; --red: #c23a2b; --green: #2e8a4a; --purple: #7a4fc9; --teal: #0f7a6a; --code: #f1eee8;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #1b1a18; --fg: #ebe7e0; --dim: #a39d93; --line: #34312c; --card: #23221f;
-      --blue: #6ea3f5; --orange: #e8a03f; --red: #ef7a6c; --green: #6cc48a; --purple: #b294f2; --code: #2c2a26;
+      --blue: #6ea3f5; --orange: #e8a03f; --red: #ef7a6c; --green: #6cc48a; --purple: #b294f2; --teal: #3cc7a8; --code: #2c2a26;
     }
   }
   * { box-sizing: border-box; }
@@ -99,6 +99,13 @@
   .out { border: 1px solid var(--line); border-left: 4px solid var(--c); border-radius: 8px; padding: 8px 12px; background: var(--card); font-size: 13px; }
   .out .what { font-weight: 600; color: var(--c); }
   .out .eg { margin-top: 6px; background: var(--code); border-radius: 6px; padding: 6px 8px; font-size: 12px; }
+
+  /* The timeline legend: the pane's own marks and colors (hooks/graph.ts legendSvg). */
+  .legend { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 28px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 18px; font-size: 14px; }
+  @media (max-width: 700px) { .legend { grid-template-columns: 1fr; } }
+  .legend h4 { margin: 0 0 4px; font-size: 13px; color: var(--dim); }
+  .legend div > div { display: flex; align-items: center; gap: 10px; min-height: 24px; }
+  .legend svg { width: 24px; height: 20px; flex: none; }
 </style>
 </head>
 <body>
@@ -116,21 +123,21 @@
     <p class="lead">A pane beside the Claude Code chat that answers "where are we?": the session's plan, its git branches, what waits on you, and what changed while you were away.</p>
     <nav>
       <a href="#en-plan">The plan</a><a href="#en-on">On and off</a><a href="#en-pane">The pane</a>
-      <a href="#en-strip">Status strip</a><a href="#en-clicks">Clicking the timeline</a><a href="#en-claude">What Claude is told</a>
+      <a href="#en-legend">Timeline legend</a><a href="#en-strip">Status strip</a><a href="#en-clicks">Clicking the timeline</a><a href="#en-claude">What Claude is told</a>
       <a href="#en-settings">Settings</a><a href="#en-limits">Known limits</a>
     </nav>
 
     <h2 id="en-plan">The plan</h2>
-    <p>Each conversation with Claude can have its own plan: a goal, and the steps to get there. <strong>Claude writes it, not you.</strong> It appears in the pane once the work has several steps, and Claude keeps it up to date as it goes: a step turns done when it is finished, the next one becomes current, and a step that needs something from you says so.</p>
+    <p>Each conversation with Claude can have its own plan: a goal, and the steps to get there. Claude writes it once the work has several steps, and it shows in the pane. Claude then keeps it up to date as it goes: a step turns done when it is finished, the next one becomes current, and a step that needs something from you says so.</p>
     <div class="chips"><span>You ask for something</span><i>→</i><span>Claude sees several steps</span><i>→</i><span>the plan appears</span><i>→</i><span>steps tick off as it works</span><i>→</i><span>goal reached ✓</span></div>
 
     <h3>Why some conversations have no plan</h3>
-    <p>Not every conversation gets one, and that's expected. Without a plan, the pane still shows your branches and commits, just no steps. So a conversation can have plenty of commits in its timeline and still no plan.</p>
+    <p>Without a plan, the pane still shows your branches and commits, only no steps, so a timeline full of commits can still have no plan. There are three usual reasons:</p>
     <figure data-fig="plans"></figure>
     <ul>
-      <li><strong>The work was short.</strong> A question, a quick fix or a one-off change doesn't need a plan.</li>
-      <li><strong>Claude skipped it.</strong> When a conversation goes on without a plan, Wayfinder reminds Claude once. It is a reminder, not an order, and Claude sometimes misses it, even in long conversations with commits.</li>
-      <li><strong>Wayfinder is off in that conversation.</strong> The pane then says so and shows a <span class="btn">Turn on</span> button.</li>
+      <li>The work was short. A question, a quick fix or a one-off change doesn't need a plan.</li>
+      <li>Claude skipped it. When a conversation goes on without a plan, Wayfinder reminds Claude once. Claude can ignore the reminder, and sometimes does, even in long conversations with commits.</li>
+      <li>Wayfinder is off in that conversation. The pane then says so and shows a <span class="btn">Turn on</span> button.</li>
     </ul>
     <div class="card"><strong>No plan where you want one?</strong> Just ask: "record the plan in Wayfinder". Claude writes it from what you have done so far. In a conversation where Wayfinder is off, <code>/wayfinder</code> turns it on and asks Claude for the plan in one go.</div>
 
@@ -138,7 +145,7 @@
     <p>When Claude hasn't touched the plan for a few messages, or commits went in since, the pane shows <strong>Plan is behind</strong> in orange and Claude gets a nudge. You can also tick a step yourself: click it in the timeline and choose <strong>Mark done</strong>.</p>
 
     <h3>One plan per conversation</h3>
-    <p>Every conversation keeps its own plan. Your other conversations show under <strong>▸ Other sessions</strong> with their goal and current step, and anything of theirs that waits on you shows in <strong>Waiting on you</strong>, so you can see it from any conversation.</p>
+    <p>Your other conversations show under <strong>▸ Other sessions</strong> with their goal and current step. Anything of theirs that waits on you also shows in <strong>Waiting on you</strong>, in every conversation's pane.</p>
 
     <h2 id="en-on">On and off</h2>
     <p>Wayfinder is on in new sessions by default (the <em>Turn on in new sessions</em> setting). Off means no pane, no notes to Claude, and the plan tool hidden, so it costs almost no tokens. An off session still records which files it edits, at no token cost, so other sessions can warn about shared files.</p>
@@ -174,17 +181,21 @@
         </ul>
       </li>
       <li><strong>Token cost</strong>, a dim line: what Wayfinder cost in this session (plan updates, notes to Claude, the tool's description), about 4 characters a token.</li>
-      <li><strong>▸ Legend</strong>: what every shape and color means.</li>
+      <li><strong>▸ Legend</strong>: what every shape and color means (see <a href="#en-legend">Timeline legend</a>).</li>
       <li><strong>Edited while no step was current</strong> (orange), when Claude edited files outside any step.</li>
       <li><strong>▸ Other sessions</strong>: your other sessions where Wayfinder is on, with goal, repos, current step and when they last moved.</li>
       <li><strong>▸ Settings</strong>, then the <span class="btn">How it works ↗</span> button that opened this page.</li>
     </ol>
 
+    <h2 id="en-legend">Timeline legend</h2>
+    <p>The same marks as the pane's <strong>▸ Legend</strong>. Lanes other than your current branch and main each get their own color.</p>
+    <figure data-fig="legend"></figure>
+
     <h2 id="en-strip">Status strip</h2>
     <p>A thin outlined line above the message box says where the work stands. Nothing shows without a plan.</p>
     <table>
       <tr><td><span class="strip" style="--c:var(--blue)"><b>Working on</b><span>2.3 Benchmark on 1M rows</span></span></td><td>The current step.</td></tr>
-      <tr><td><span class="strip" style="--c:var(--orange)"><b>Waiting on you</b><span>run it on staging</span></span></td><td>A step waits on you: what exactly.</td></tr>
+      <tr><td><span class="strip" style="--c:var(--orange)"><b>Waiting on you</b><span>run it on staging</span></span></td><td>A step waits on you, and what for.</td></tr>
       <tr><td><span class="strip" style="--c:var(--orange)"><b>Stuck</b><span>2.3 Benchmark on 1M rows</span></span></td><td>The current step hasn't moved for 6 turns.</td></tr>
       <tr><td><span class="strip" style="--c:var(--red)"><b>Blocked</b><span>3.2 Open PR</span></span></td><td>A step is blocked.</td></tr>
       <tr><td><span class="strip" style="--c:var(--purple)"><b>Off plan</b><span>Hotfix the header</span></span></td><td>The plan changed this turn, or the current step wasn't in it.</td></tr>
@@ -238,9 +249,9 @@
 
     <h3>Drafts and side answers</h3>
     <ul>
-      <li><strong>Drafts are never sent.</strong> They go into your message box, after anything you already typed, and a toast says so. You read and send them yourself, because they quote step titles Claude wrote.</li>
-      <li><strong>Side answers stay out of the chat.</strong> They run on a copy of the conversation at low effort and appear in a box in the pane ("Thinking…" first), like <code>/btw</code>.</li>
-      <li>Closing a dialog without picking does nothing. In a terminal the same applies: each line naming a step, phase or commit can be clicked.</li>
+      <li>Drafts go into your message box, after anything you already typed, and a toast says so. Wayfinder never sends them: you read and send them yourself, because they quote step titles Claude wrote.</li>
+      <li>Side answers stay out of the chat. They run on a copy of the conversation at low effort and appear in a box in the pane ("Thinking…" first), like <code>/btw</code>.</li>
+      <li>Closing a dialog without picking does nothing. In a terminal too, each line naming a step, phase or commit can be clicked and opens the same dialog.</li>
       <li><strong>Mark done</strong> finishes the step. <strong>Clear</strong> in the waiting card only removes the wait.</li>
     </ul>
 
@@ -252,7 +263,7 @@
       <li>Files another Wayfinder session also edited, once per file, so Claude checks before touching them.</li>
       <li>A reminder when the plan is behind, or once when there is no plan yet.</li>
     </ul>
-    <p>Git text and other sessions' goals reach Claude quoted and labelled as data, never as instructions.</p>
+    <p>Git text and other sessions' goals reach Claude in quotes and labelled as data, so Claude doesn't take them as instructions.</p>
 
     <h2 id="en-settings">Settings</h2>
     <p>In the pane's <strong>▸ Settings</strong> block, or <code>/config</code> (stored in <code>settings.json</code> under <code>pluginConfigs</code>):</p>
@@ -261,7 +272,7 @@
       <li><strong>Other sessions from the last N days</strong>: 7 by default.</li>
       <li><strong>List at most N other sessions</strong>: 8 by default.</li>
     </ul>
-    <p>Other open sessions use a change after <code>/reload-plugins</code>.</p>
+    <p>Sessions that are already open pick up a change after <code>/reload-plugins</code>.</p>
 
     <h2 id="en-limits">Known limits</h2>
     <ul>
@@ -277,21 +288,21 @@
     <p class="lead">Un panneau à côté de la conversation Claude Code qui répond à « où en est-on ? » : le plan de la session, ses branches git, ce qui attend ta réponse, et ce qui a changé pendant ton absence.</p>
     <nav>
       <a href="#fr-plan">Le plan</a><a href="#fr-on">Activer, désactiver</a><a href="#fr-pane">Le panneau</a>
-      <a href="#fr-strip">Bandeau d’état</a><a href="#fr-clicks">Cliquer dans la frise</a><a href="#fr-claude">Ce que Claude apprend</a>
+      <a href="#fr-legend">Légende de la frise</a><a href="#fr-strip">Bandeau d’état</a><a href="#fr-clicks">Cliquer dans la frise</a><a href="#fr-claude">Ce que Claude apprend</a>
       <a href="#fr-settings">Réglages</a><a href="#fr-limits">Limites connues</a>
     </nav>
 
     <h2 id="fr-plan">Le plan</h2>
-    <p>Chaque conversation avec Claude peut avoir son propre plan : un objectif, et les étapes pour y arriver. <strong>C’est Claude qui l’écrit, pas toi.</strong> Il apparaît dans le panneau dès que le travail compte plusieurs étapes, et Claude le tient à jour en avançant : une étape passe faite quand elle est finie, la suivante devient l’étape en cours, et une étape qui a besoin de toi le dit.</p>
+    <p>Chaque conversation avec Claude peut avoir son propre plan : un objectif, et les étapes pour y arriver. Claude l’écrit dès que le travail compte plusieurs étapes, et il s’affiche dans le panneau. Claude le tient ensuite à jour en avançant : une étape passe faite quand elle est finie, la suivante devient l’étape en cours, et une étape qui a besoin de toi le dit.</p>
     <div class="chips"><span>Tu demandes quelque chose</span><i>→</i><span>Claude voit plusieurs étapes</span><i>→</i><span>le plan apparaît</span><i>→</i><span>les étapes se cochent au fil du travail</span><i>→</i><span>objectif atteint ✓</span></div>
 
     <h3>Pourquoi certaines conversations n’ont pas de plan</h3>
-    <p>Toutes n’en ont pas, et c’est normal. Sans plan, le panneau montre quand même tes branches et tes commits, simplement sans étapes. Une conversation peut donc avoir plein de commits dans sa frise et toujours pas de plan.</p>
+    <p>Sans plan, le panneau montre quand même tes branches et tes commits, simplement sans étapes : une frise pleine de commits peut donc n’avoir aucun plan. Il y a trois raisons habituelles :</p>
     <figure data-fig="plans"></figure>
     <ul>
-      <li><strong>Le travail était court.</strong> Une question, une petite correction ou un changement ponctuel n’ont pas besoin de plan.</li>
-      <li><strong>Claude l’a oublié.</strong> Quand une conversation avance sans plan, Wayfinder le rappelle une fois à Claude. C’est un rappel, pas un ordre, et Claude le rate parfois, même dans une longue conversation avec des commits.</li>
-      <li><strong>Wayfinder est désactivé dans cette conversation.</strong> Le panneau le dit alors et propose un bouton <span class="btn">Activer</span>.</li>
+      <li>Le travail était court. Une question, une petite correction ou un changement ponctuel n’ont pas besoin de plan.</li>
+      <li>Claude l’a oublié. Quand une conversation avance sans plan, Wayfinder le rappelle une fois à Claude. Claude peut ignorer ce rappel, et ça arrive, même dans une longue conversation avec des commits.</li>
+      <li>Wayfinder est désactivé dans cette conversation. Le panneau le dit alors et propose un bouton <span class="btn">Activer</span>.</li>
     </ul>
     <div class="card"><strong>Pas de plan là où tu en voudrais un ?</strong> Demande-le simplement : « note le plan dans Wayfinder ». Claude l’écrit à partir de ce qui a déjà été fait. Dans une conversation où Wayfinder est désactivé, <code>/wayfinder</code> l’active et demande le plan à Claude en une fois.</div>
 
@@ -299,7 +310,7 @@
     <p>Quand Claude n’a pas touché au plan depuis quelques messages, ou que des commits sont arrivés depuis, le panneau affiche <strong>Plan en retard</strong> en orange et Claude reçoit un rappel. Tu peux aussi cocher une étape toi-même : clique dessus dans la frise et choisis <strong>Marquer faite</strong>.</p>
 
     <h3>Un plan par conversation</h3>
-    <p>Chaque conversation garde son propre plan. Tes autres conversations apparaissent sous <strong>▸ Autres sessions</strong> avec leur objectif et leur étape en cours, et ce qui attend ta réponse chez elles s’affiche dans <strong>En attente de toi</strong>, visible depuis n’importe quelle conversation.</p>
+    <p>Tes autres conversations apparaissent sous <strong>▸ Autres sessions</strong> avec leur objectif et leur étape en cours. Ce qui attend ta réponse chez elles s’affiche aussi dans <strong>En attente de toi</strong>, dans le panneau de chaque conversation.</p>
 
     <h2 id="fr-on">Activer, désactiver</h2>
     <p>Wayfinder est activé par défaut dans les nouvelles sessions (réglage <em>Activer dans les nouvelles sessions</em>). Désactivé, il n’y a plus de panneau ni de notes à Claude, et l’outil de plan est caché : il ne coûte presque aucun token. Une session désactivée note quand même les fichiers qu’elle modifie, sans coût en tokens, pour que les autres sessions puissent signaler les fichiers partagés.</p>
@@ -335,17 +346,21 @@
         </ul>
       </li>
       <li><strong>Coût en tokens</strong>, une ligne pâle : ce que Wayfinder a coûté dans cette session (mises à jour du plan, notes à Claude, description de l’outil), environ 4 caractères par token.</li>
-      <li><strong>▸ Légende</strong> : le sens de chaque forme et couleur.</li>
+      <li><strong>▸ Légende</strong> : le sens de chaque forme et couleur (voir <a href="#fr-legend">Légende de la frise</a>).</li>
       <li><strong>Modifié hors de toute étape</strong> (orange), quand Claude a modifié des fichiers sans étape en cours.</li>
       <li><strong>▸ Autres sessions</strong> : tes autres sessions où Wayfinder est activé, avec objectif, dépôts, étape en cours et dernière activité.</li>
       <li><strong>▸ Réglages</strong>, puis le bouton <span class="btn">Mode d’emploi ↗</span> qui a ouvert cette page.</li>
     </ol>
 
+    <h2 id="fr-legend">Légende de la frise</h2>
+    <p>Les mêmes repères que la <strong>▸ Légende</strong> du panneau. Les branches autres que ta branche actuelle et main ont chacune leur couleur.</p>
+    <figure data-fig="legend"></figure>
+
     <h2 id="fr-strip">Bandeau d’état</h2>
     <p>Une fine ligne encadrée au-dessus de la zone de message dit où en est le travail. Rien ne s’affiche sans plan.</p>
     <table>
       <tr><td><span class="strip" style="--c:var(--blue)"><b>En cours</b><span>2.3 Benchmark sur 1M lignes</span></span></td><td>L’étape actuelle.</td></tr>
-      <tr><td><span class="strip" style="--c:var(--orange)"><b>Attend ta réponse</b><span>le lancer sur staging</span></span></td><td>Une étape attend ta réponse : quoi exactement.</td></tr>
+      <tr><td><span class="strip" style="--c:var(--orange)"><b>Attend ta réponse</b><span>le lancer sur staging</span></span></td><td>Une étape attend ta réponse, et pour quoi.</td></tr>
       <tr><td><span class="strip" style="--c:var(--orange)"><b>Coincé</b><span>2.3 Benchmark sur 1M lignes</span></span></td><td>L’étape actuelle n’a pas bougé depuis 6 tours.</td></tr>
       <tr><td><span class="strip" style="--c:var(--red)"><b>Bloqué</b><span>3.2 Ouvrir la PR</span></span></td><td>Une étape est bloquée.</td></tr>
       <tr><td><span class="strip" style="--c:var(--purple)"><b>Hors plan</b><span>Corriger l’en-tête</span></span></td><td>Le plan a changé ce tour-ci, ou l’étape actuelle n’y figurait pas.</td></tr>
@@ -399,9 +414,9 @@
 
     <h3>Brouillons et réponses à part</h3>
     <ul>
-      <li><strong>Les brouillons ne sont jamais envoyés.</strong> Ils vont dans ta zone de message, après ce que tu as déjà tapé, et une notification le dit. Tu les relis et les envoies toi-même, car ils citent des titres d’étape écrits par Claude.</li>
-      <li><strong>Les réponses à part restent hors de la conversation.</strong> Elles tournent sur une copie de la conversation, en effort réduit, et s’affichent dans un cadre du panneau (« Réflexion… » d’abord), comme <code>/btw</code>.</li>
-      <li>Fermer une fenêtre sans choisir ne fait rien. Dans un terminal c’est pareil : chaque ligne qui nomme une étape, une phase ou un commit est cliquable.</li>
+      <li>Les brouillons vont dans ta zone de message, après ce que tu as déjà tapé, et une notification le dit. Wayfinder ne les envoie jamais : tu les relis et les envoies toi-même, car ils citent des titres d’étape écrits par Claude.</li>
+      <li>Les réponses à part restent hors de la conversation. Elles tournent sur une copie de la conversation, en effort réduit, et s’affichent dans un cadre du panneau (« Réflexion… » d’abord), comme <code>/btw</code>.</li>
+      <li>Fermer une fenêtre sans choisir ne fait rien. Dans un terminal aussi, chaque ligne qui nomme une étape, une phase ou un commit est cliquable et ouvre la même fenêtre.</li>
       <li><strong>Marquer faite</strong> termine l’étape. <strong>Retirer</strong> dans le cadre d’attente enlève seulement l’attente.</li>
     </ul>
 
@@ -413,7 +428,7 @@
       <li>Les fichiers qu’une autre session Wayfinder a aussi modifiés, une fois par fichier, pour que Claude vérifie avant d’y toucher.</li>
       <li>Un rappel quand le plan est en retard, ou une fois quand il n’y a pas encore de plan.</li>
     </ul>
-    <p>Le texte venant de git et les objectifs des autres sessions arrivent à Claude entre guillemets et présentés comme des données, jamais comme des instructions.</p>
+    <p>Le texte venant de git et les objectifs des autres sessions arrivent à Claude entre guillemets et présentés comme des données, pour que Claude ne les prenne pas pour des instructions.</p>
 
     <h2 id="fr-settings">Réglages</h2>
     <p>Dans le bloc <strong>▸ Réglages</strong> du panneau, ou <code>/config</code> (enregistrés dans <code>settings.json</code> sous <code>pluginConfigs</code>) :</p>
@@ -422,7 +437,7 @@
       <li><strong>Autres sessions des N derniers jours</strong> : 7 par défaut.</li>
       <li><strong>Lister au plus N autres sessions</strong> : 8 par défaut.</li>
     </ul>
-    <p>Les autres sessions ouvertes utilisent un changement après <code>/reload-plugins</code>.</p>
+    <p>Les sessions déjà ouvertes prennent un changement en compte après <code>/reload-plugins</code>.</p>
 
     <h2 id="fr-limits">Limites connues</h2>
     <ul>
@@ -536,7 +551,7 @@
 
     <circle cx="28" cy="24" r="5" fill="var(--dim)"/>
     <circle cx="50" cy="120" r="5" fill="var(--blue)"/>
-    <polygon points="50,140 56,146 50,152 44,146" fill="var(--card)" stroke="var(--purple)" stroke-width="1.8"/>
+    <polygon points="50,140 56,146 50,152 44,146" fill="var(--card)" stroke="var(--teal)" stroke-width="1.8"/>
     <circle cx="50" cy="172" r="7" fill="var(--green)"/><path d="M46.5 172 l2.5 2.5 l4.5 -5" stroke="#fff" stroke-width="1.8" fill="none"/>
     <circle cx="28" cy="198" r="5" fill="var(--orange)"/>
     <circle cx="50" cy="224" r="8.5" fill="var(--card)" stroke="var(--blue)" stroke-width="2.5"/><circle cx="50" cy="224" r="3.5" fill="var(--blue)"/>
@@ -614,6 +629,41 @@
     </g>
   </svg>
   <figcaption><span class="en">One branch of a timeline, and what each kind of row does when you click it.</span><span class="fr">Une branche de la frise, et ce que fait chaque sorte de ligne quand tu cliques dessus.</span></figcaption>
+</template>
+
+<template id="t-legend">
+  <div class="legend">
+    <div>
+      <h4><span class="en">Steps</span><span class="fr">Étapes</span></h4>
+      <div><svg viewBox="0 0 24 20"><circle cx="12" cy="10" r="7" fill="var(--green)"/><path d="M8.5 10 l2.5 2.6 l4.5 -5" stroke="#fff" stroke-width="1.8" fill="none"/></svg><span class="en">Done</span><span class="fr">Faite</span></div>
+      <div><svg viewBox="0 0 24 20"><circle cx="12" cy="10" r="9.5" fill="var(--blue)" fill-opacity="0.15"/><circle cx="12" cy="10" r="6" fill="var(--card)" stroke="var(--blue)" stroke-width="2.5"/><circle cx="12" cy="10" r="2.5" fill="var(--blue)"/></svg><span class="en">Doing: you are here</span><span class="fr">En cours : tu es ici</span></div>
+      <div><svg viewBox="0 0 24 20"><circle cx="12" cy="10" r="6" fill="var(--card)" stroke="var(--dim)" stroke-width="2"/></svg><span class="en">To do</span><span class="fr">À faire</span></div>
+      <div><svg viewBox="0 0 24 20"><circle cx="12" cy="10" r="7" fill="var(--red)"/><path d="M9 7 l6 6 M15 7 l-6 6" stroke="#fff" stroke-width="1.8"/></svg><span class="en">Blocked</span><span class="fr">Bloquée</span></div>
+      <div><svg viewBox="0 0 24 20"><circle cx="12" cy="10" r="5" fill="var(--card)" stroke="var(--dim)" stroke-width="2" opacity="0.5"/></svg><span class="en">Dropped (struck through)</span><span class="fr">Abandonnée (barrée)</span></div>
+      <div><svg viewBox="0 0 24 20"><path d="M12 3 l7 7 l-7 7 l-7 -7 Z" fill="var(--card)" stroke="#EF9F27" stroke-width="2.5"/></svg><span class="en">Not in the first plan (filled once done)</span><span class="fr">Hors du premier plan (pleine une fois faite)</span></div>
+    </div>
+    <div>
+      <h4><span class="en">Other marks</span><span class="fr">Autres repères</span></h4>
+      <div><svg viewBox="0 0 24 20"><circle cx="12" cy="10" r="4.5" fill="#639922"/></svg><span class="en">Commit, in its branch color</span><span class="fr">Commit, couleur de sa branche</span></div>
+      <div><svg viewBox="0 0 24 20"><circle cx="12" cy="10" r="4.5" fill="#BA7517"/></svg><span class="en">Commit made elsewhere</span><span class="fr">Commit fait ailleurs</span></div>
+      <div><svg viewBox="0 0 24 20"><path d="M12 5 l5 5 l-5 5 l-5 -5 Z" fill="var(--card)" stroke="var(--teal)" stroke-width="1.5"/></svg><span class="en">Decision</span><span class="fr">Décision</span></div>
+      <div><svg viewBox="0 0 24 20"><line x1="2" y1="10" x2="12" y2="10" stroke="var(--purple)"/><rect x="12" y="5" width="10" height="10" rx="2" fill="var(--card)" stroke="var(--purple)" stroke-width="1.5"/></svg><span class="en">Stash</span><span class="fr">Stash</span></div>
+      <div><svg viewBox="0 0 24 20"><circle cx="12" cy="10" r="5" fill="none" stroke="var(--blue)" stroke-width="1.5" stroke-dasharray="2 2"/></svg><span class="en">Changed, not committed</span><span class="fr">Modifié, pas commité</span></div>
+      <div><svg viewBox="0 0 24 20"><path d="M18 1 C18 12, 6 8, 6 19" stroke="var(--dim)" stroke-width="2.5" stroke-dasharray="4 4" fill="none"/></svg><span class="en">Planned merge into main</span><span class="fr">Fusion prévue dans main</span></div>
+    </div>
+    <div>
+      <h4><span class="en">Lanes</span><span class="fr">Branches</span></h4>
+      <div><svg viewBox="0 0 24 20"><line x1="4" y1="10" x2="20" y2="10" stroke="#639922" stroke-width="2.5"/></svg><span class="en">Your current branch</span><span class="fr">Ta branche actuelle</span></div>
+      <div><svg viewBox="0 0 24 20"><line x1="4" y1="10" x2="20" y2="10" stroke="#888780" stroke-width="2.5"/></svg><span class="en">Main (the base)</span><span class="fr">Main (la base)</span></div>
+      <div><svg viewBox="0 0 24 20"><line x1="4" y1="10" x2="20" y2="10" stroke="var(--dim)" stroke-width="2.5" stroke-dasharray="4 4"/></svg><span class="en">Dashed: still to come</span><span class="fr">Pointillés : à venir</span></div>
+    </div>
+    <div>
+      <h4><span class="en">Phase blocks</span><span class="fr">Blocs de phase</span></h4>
+      <div><svg viewBox="0 0 24 20"><rect x="2" y="3" width="20" height="14" rx="4" fill="var(--blue)" fill-opacity="0.12" stroke="var(--blue)"/></svg><span class="en">Current phase</span><span class="fr">Phase en cours</span></div>
+      <div><svg viewBox="0 0 24 20"><rect x="2" y="3" width="20" height="14" rx="4" fill="none" stroke="var(--green)"/></svg><span class="en">Phase done</span><span class="fr">Phase faite</span></div>
+      <div><svg viewBox="0 0 24 20"><rect x="2" y="3" width="20" height="14" rx="4" fill="none" stroke="var(--dim)" opacity="0.7"/></svg><span class="en">Not started yet</span><span class="fr">Pas encore commencée</span></div>
+    </div>
+  </div>
 </template>
 
 <template id="t-dialog">
