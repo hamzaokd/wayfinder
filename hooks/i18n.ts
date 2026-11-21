@@ -160,6 +160,8 @@ const EN = {
   setNote: 'Saved in Claude Code settings. Other open sessions use it after /reload-plugins.',
   setFailed: (why: string) => `Setting not saved: ${why}`,
   openChatFailed: (why: string) => `Could not open that chat: ${why}`,
+  openGuide: 'How it works ↗',
+  openGuideFailed: (why: string) => `Could not open the guide: ${why}`,
 }
 
 const FR: typeof EN = {
@@ -308,6 +310,8 @@ const FR: typeof EN = {
   setNote: 'Enregistré dans les réglages de Claude Code. Les autres sessions ouvertes l’utilisent après /reload-plugins.',
   setFailed: why => `Réglage non enregistré : ${why}`,
   openChatFailed: why => `Impossible d’ouvrir cette conversation : ${why}`,
+  openGuide: 'Mode d’emploi ↗',
+  openGuideFailed: why => `Impossible d’ouvrir le mode d’emploi : ${why}`,
 }
 
 export type Lang = 'en' | 'fr'

@@ -11,6 +11,8 @@ A Claude Code mod that keeps a pane beside the chat answering "where are we?":
 
 Data is saved per session in Claude Code's own plugin store, never in your repos.
 
+A full guide in English and French (every part of the pane, and what each click does) is in `docs/guide.html`; the pane's **How it works ↗** button opens it in your browser.
+
 ## Install
 
 On the machine that holds this folder, for every session (desktop app included), install it from the folder itself, so edits here reach sessions with `/reload-plugins`:

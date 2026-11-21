@@ -1,0 +1,668 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wayfinder: guide</title>
+<style>
+  :root {
+    --bg: #fbfaf7; --fg: #1f1d1a; --dim: #6b665e; --line: #e4e0d8; --card: #ffffff;
+    --blue: #2f6fd6; --orange: #c2700c; --red: #c23a2b; --green: #2e8a4a; --purple: #7a4fc9; --code: #f1eee8;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1b1a18; --fg: #ebe7e0; --dim: #a39d93; --line: #34312c; --card: #23221f;
+      --blue: #6ea3f5; --orange: #e8a03f; --red: #ef7a6c; --green: #6cc48a; --purple: #b294f2; --code: #2c2a26;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 860px; margin: 0 auto; padding: 32px 24px 80px; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--line); padding-bottom: 16px; margin-bottom: 8px; }
+  header h1 { margin: 0; font-size: 28px; letter-spacing: -0.01em; }
+  .switch { display: flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .switch button { border: 0; background: transparent; color: var(--dim); padding: 6px 14px; font: inherit; font-size: 14px; cursor: pointer; }
+  .switch button[aria-pressed="true"] { background: var(--fg); color: var(--bg); }
+  h2 { font-size: 21px; margin: 40px 0 8px; padding-top: 8px; }
+  h3 { font-size: 17px; margin: 24px 0 6px; }
+  p, li { color: var(--fg); }
+  .lead { color: var(--dim); font-size: 17px; }
+  nav { margin: 16px 0 0; display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 14px; }
+  nav a { color: var(--dim); }
+  a { color: var(--blue); }
+  code, kbd { background: var(--code); border-radius: 4px; padding: 1px 5px; font: 14px ui-monospace, "Cascadia Mono", Consolas, monospace; }
+  .btn { display: inline-block; border: 1px solid var(--line); border-radius: 6px; padding: 0 7px; font-size: 14px; background: var(--card); white-space: nowrap; }
+  table { width: 100%; border-collapse: collapse; margin: 8px 0 16px; font-size: 15px; }
+  th, td { text-align: left; vertical-align: top; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+  th { color: var(--dim); font-weight: 600; font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; }
+  td:first-child { width: 34%; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 18px; margin: 12px 0; }
+  .note { border-left: 3px solid var(--blue); padding: 4px 14px; color: var(--dim); margin: 12px 0; }
+  .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: 0; }
+  ol.pane > li { margin-bottom: 10px; }
+  [data-lang] { display: none; }
+  html[lang="en"] [data-lang="en"], html[lang="fr"] [data-lang="fr"] { display: block; }
+  /* Figures are written once, with both languages inside; the other language is hidden. */
+  html[lang="en"] .fr, html[lang="fr"] .en { display: none !important; }
+
+  figure { margin: 20px 0 26px; }
+  figcaption { color: var(--dim); font-size: 13px; margin-top: 10px; text-align: center; }
+  figure svg { width: 100%; height: auto; display: block; }
+  svg text { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; fill: var(--fg); }
+  svg .mono { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; }
+  svg .dim { fill: var(--dim); }
+  svg .box { fill: var(--card); stroke: var(--line); stroke-width: 1.5; }
+  svg .arrow { stroke: var(--dim); stroke-width: 1.6; fill: none; }
+  svg .head { fill: var(--dim); }
+
+  /* A mock of the pane: the real pane's look, at a smaller size. */
+  .mockwrap { display: flex; justify-content: center; }
+  .mock { width: 400px; max-width: calc(100% - 36px); margin-left: 36px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px; font-size: 12.5px; line-height: 1.5; display: flex; flex-direction: column; gap: 12px; box-shadow: 0 6px 24px rgba(0,0,0,.08); }
+  .mock .sec { position: relative; }
+  .mock .n { position: absolute; left: -44px; top: 2px; width: 20px; height: 20px; border-radius: 50%; background: var(--fg); color: var(--bg); font-size: 11px; font-weight: 700; display: grid; place-items: center; }
+  .mock .card2 { border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; }
+  .mock .o { border-color: var(--orange); } .mock .bl { border-color: var(--blue); } .mock .gr { border-color: var(--green); }
+  .mock .t-o { color: var(--orange); } .mock .t-b { color: var(--blue); } .mock .t-r { color: var(--red); } .mock .t-g { color: var(--green); }
+  .mock .d { color: var(--dim); } .mock .b { font-weight: 600; } .mock .sm { font-size: 11px; }
+  .mock .row { display: flex; align-items: center; gap: 6px; }
+  .mock .ind { padding-left: 10px; } .mock .ind2 { padding-left: 22px; }
+  .mock .h { font-size: 17px; font-weight: 650; }
+  .mock .mono { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 11.5px; }
+  .mbtn { display: inline-block; border: 1px solid var(--line); border-radius: 5px; padding: 0 6px; font-size: 11px; background: var(--bg); line-height: 1.6; white-space: nowrap; }
+
+  /* Two small panes side by side (with and without a plan). */
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 700px) { .two { grid-template-columns: 1fr; } }
+  .two .mock { width: auto; max-width: none; margin-left: 0; min-height: 190px; }
+  .two .tag { font-size: 12px; font-weight: 600; color: var(--dim); text-transform: uppercase; letter-spacing: 0.05em; margin: 0 0 6px 4px; }
+
+  /* The status strip, as it sits above the message box. */
+  .strip { display: inline-flex; gap: 8px; border: 1.5px solid var(--c); border-radius: 8px; padding: 2px 10px; font-size: 13px; white-space: nowrap; }
+  .strip b { color: var(--c); }
+  .strip span { color: var(--dim); }
+
+  /* Chips joined by arrows: a short sequence of what happens. */
+  .chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 8px 0 4px; font-size: 13px; }
+  .chips span { background: var(--code); border-radius: 999px; padding: 2px 10px; }
+  .chips i { color: var(--dim); font-style: normal; }
+
+  /* The step dialog and where each choice goes. */
+  .dlg { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; align-items: start; }
+  @media (max-width: 700px) { .dlg { grid-template-columns: 1fr; } }
+  .ask { background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; font-size: 13px; }
+  .ask .top { padding: 10px 14px; border-bottom: 1px solid var(--line); }
+  .ask .opt { display: flex; align-items: center; gap: 10px; padding: 8px 14px; border-bottom: 1px solid var(--line); }
+  .ask .opt:last-child { border-bottom: 0; }
+  .ask .radio { width: 14px; height: 14px; border-radius: 50%; border: 1.5px solid var(--dim); flex: none; }
+  .ask .k { margin-left: auto; font-size: 11px; color: var(--bg); background: var(--c); border-radius: 4px; padding: 0 6px; }
+  .outs { display: flex; flex-direction: column; gap: 12px; }
+  .out { border: 1px solid var(--line); border-left: 4px solid var(--c); border-radius: 8px; padding: 8px 12px; background: var(--card); font-size: 13px; }
+  .out .what { font-weight: 600; color: var(--c); }
+  .out .eg { margin-top: 6px; background: var(--code); border-radius: 6px; padding: 6px 8px; font-size: 12px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Wayfinder</h1>
+    <div class="switch" role="group" aria-label="Language / Langue">
+      <button type="button" data-set="en">English</button>
+      <button type="button" data-set="fr">Français</button>
+    </div>
+  </header>
+
+  <!-- ============================== ENGLISH ============================== -->
+  <div data-lang="en">
+    <p class="lead">A pane beside the Claude Code chat that answers "where are we?": the session's plan, its git branches, what waits on you, and what changed while you were away.</p>
+    <nav>
+      <a href="#en-plan">The plan</a><a href="#en-on">On and off</a><a href="#en-pane">The pane</a>
+      <a href="#en-strip">Status strip</a><a href="#en-clicks">Clicking the timeline</a><a href="#en-claude">What Claude is told</a>
+      <a href="#en-settings">Settings</a><a href="#en-limits">Known limits</a>
+    </nav>
+
+    <h2 id="en-plan">The plan</h2>
+    <p>Each conversation with Claude can have its own plan: a goal, and the steps to get there. <strong>Claude writes it, not you.</strong> It appears in the pane once the work has several steps, and Claude keeps it up to date as it goes: a step turns done when it is finished, the next one becomes current, and a step that needs something from you says so.</p>
+    <div class="chips"><span>You ask for something</span><i>→</i><span>Claude sees several steps</span><i>→</i><span>the plan appears</span><i>→</i><span>steps tick off as it works</span><i>→</i><span>goal reached ✓</span></div>
+
+    <h3>Why some conversations have no plan</h3>
+    <p>Not every conversation gets one, and that's expected. Without a plan, the pane still shows your branches and commits, just no steps. So a conversation can have plenty of commits in its timeline and still no plan.</p>
+    <figure data-fig="plans"></figure>
+    <ul>
+      <li><strong>The work was short.</strong> A question, a quick fix or a one-off change doesn't need a plan.</li>
+      <li><strong>Claude skipped it.</strong> When a conversation goes on without a plan, Wayfinder reminds Claude once. It is a reminder, not an order, and Claude sometimes misses it, even in long conversations with commits.</li>
+      <li><strong>Wayfinder is off in that conversation.</strong> The pane then says so and shows a <span class="btn">Turn on</span> button.</li>
+    </ul>
+    <div class="card"><strong>No plan where you want one?</strong> Just ask: "record the plan in Wayfinder". Claude writes it from what you have done so far. In a conversation where Wayfinder is off, <code>/wayfinder</code> turns it on and asks Claude for the plan in one go.</div>
+
+    <h3>Keeping it up to date</h3>
+    <p>When Claude hasn't touched the plan for a few messages, or commits went in since, the pane shows <strong>Plan is behind</strong> in orange and Claude gets a nudge. You can also tick a step yourself: click it in the timeline and choose <strong>Mark done</strong>.</p>
+
+    <h3>One plan per conversation</h3>
+    <p>Every conversation keeps its own plan. Your other conversations show under <strong>▸ Other sessions</strong> with their goal and current step, and anything of theirs that waits on you shows in <strong>Waiting on you</strong>, so you can see it from any conversation.</p>
+
+    <h2 id="en-on">On and off</h2>
+    <p>Wayfinder is on in new sessions by default (the <em>Turn on in new sessions</em> setting). Off means no pane, no notes to Claude, and the plan tool hidden, so it costs almost no tokens. An off session still records which files it edits, at no token cost, so other sessions can warn about shared files.</p>
+    <table>
+      <tr><th>Command</th><th>What it does</th></tr>
+      <tr><td><code>/wayfinder</code></td><td>Turns it on in this session and opens the pane. With no plan yet, your next message also asks Claude to record the plan of the work so far.</td></tr>
+      <tr><td><code>/wayfinder-off</code></td><td>Turns it off in this session.</td></tr>
+      <tr><td><code>/wayfinder-forget</code></td><td>Hides the other sessions listed now until they move again. Their plans stay saved.</td></tr>
+      <tr><td><code>/wayfinder-lang fr|en|auto</code></td><td>Sets the pane's language in every session. <code>auto</code> follows Claude Code's <code>language</code> setting.</td></tr>
+    </table>
+
+    <h2 id="en-pane">The pane, top to bottom</h2>
+    <figure data-fig="pane"></figure>
+    <ol class="pane">
+      <li><strong>Waiting on you</strong> (orange box). Every open step, in any session, that waits on you, grouped by session.
+        <ul>
+          <li><span class="btn">Clear</span> removes the wait when you did it outside Claude or no longer care. It disappears from every pane. The session it belongs to drops the wait from its plan, and its Claude is told on your next message there. The step itself stays open.
+            <div class="chips"><span>Clear</span><i>→</i><span>hidden in every pane</span><i>→</i><span>that session drops the wait</span><i>→</i><span>its Claude is told on your next message there</span></div></li>
+          <li><span class="btn">Open chat ↗</span> beside another session's name switches the desktop app to that chat. A session gets this button once it has started (or reloaded) with this version, because that is when it saves its desktop id. Sessions started in a terminal have none.</li>
+        </ul>
+      </li>
+      <li><strong>⚠ Also edited in another session</strong>. Files this session and another one both edited in the last day, with the other session's goal.</li>
+      <li><strong>Since you left</strong>. Shown after 20 minutes or more without a message from you: commits outside the session, commits Claude made, steps finished, plan changes, rewritten history, branch switches, new stashes, other sessions that moved, and the next step.
+        <ul><li><span class="btn">Got it</span> only hides this card, by counting you as back now. It tells Claude nothing and changes no plan. The card comes back after your next 20-minute absence.</li></ul>
+      </li>
+      <li><strong>Goal</strong> and <strong>Where we are</strong>. The goal turns green with "✓ ACHIEVED" once every step left in the plan is done. <strong>Plan is behind</strong> (orange) means Claude hasn't updated the plan for 3 turns, or for 1 turn with commits since.</li>
+      <li><strong>Side answer</strong> box, when you asked a question from a dialog (see below). It has a <span class="btn">Close</span> button.</li>
+      <li><strong>Repos and timeline</strong>. For each repo: branch, base, ahead/behind, uncommitted files. Then the graph, newest at the bottom:
+        <ul>
+          <li><strong>Phase blocks</strong>: an outlined box per phase, blue while current, green once done, dim before it starts. Finished phases start folded.</li>
+          <li><strong>Steps</strong>: numbered phase.step ("2.3"). Blue and bold while in progress ("you are here"), red when blocked, dim when done or to do, struck through when dropped. A tag says "waiting on you", "stuck N turns", "dropped" or "not in plan".</li>
+          <li><strong>Commits</strong> in their branch color; commits made elsewhere are flagged. <strong>Decisions</strong>, <strong>stashes</strong>, uncommitted changes and the planned merge into main also show.</li>
+        </ul>
+      </li>
+      <li><strong>Token cost</strong>, a dim line: what Wayfinder cost in this session (plan updates, notes to Claude, the tool's description), about 4 characters a token.</li>
+      <li><strong>▸ Legend</strong>: what every shape and color means.</li>
+      <li><strong>Edited while no step was current</strong> (orange), when Claude edited files outside any step.</li>
+      <li><strong>▸ Other sessions</strong>: your other sessions where Wayfinder is on, with goal, repos, current step and when they last moved.</li>
+      <li><strong>▸ Settings</strong>, then the <span class="btn">How it works ↗</span> button that opened this page.</li>
+    </ol>
+
+    <h2 id="en-strip">Status strip</h2>
+    <p>A thin outlined line above the message box says where the work stands. Nothing shows without a plan.</p>
+    <table>
+      <tr><td><span class="strip" style="--c:var(--blue)"><b>Working on</b><span>2.3 Benchmark on 1M rows</span></span></td><td>The current step.</td></tr>
+      <tr><td><span class="strip" style="--c:var(--orange)"><b>Waiting on you</b><span>run it on staging</span></span></td><td>A step waits on you: what exactly.</td></tr>
+      <tr><td><span class="strip" style="--c:var(--orange)"><b>Stuck</b><span>2.3 Benchmark on 1M rows</span></span></td><td>The current step hasn't moved for 6 turns.</td></tr>
+      <tr><td><span class="strip" style="--c:var(--red)"><b>Blocked</b><span>3.2 Open PR</span></span></td><td>A step is blocked.</td></tr>
+      <tr><td><span class="strip" style="--c:var(--purple)"><b>Off plan</b><span>Hotfix the header</span></span></td><td>The plan changed this turn, or the current step wasn't in it.</td></tr>
+      <tr><td><span class="strip" style="--c:var(--green)"><b>Goal reached</b><span>Add CSV export</span></span></td><td>Every step is done.</td></tr>
+    </table>
+
+    <h2 id="en-clicks">Clicking the timeline</h2>
+    <p>Three kinds of row can be clicked: <strong>phase headers</strong>, <strong>steps</strong> and <strong>commits</strong>. Decision lines, stash lines and the "files changed" line do nothing.</p>
+    <figure data-fig="timeline"></figure>
+
+    <h3>Phase header</h3>
+    <p>Folds or unfolds the phase. Your choice sticks.</p>
+
+    <h3>Step</h3>
+    <p>A dialog titled "Step 2.3" shows the step's title and status with when it started or finished, what it is for, its result note, what it waits on, why it was added late or dropped, and the files edited during it. The buttons depend on the step's state.</p>
+    <figure data-fig="dialog"></figure>
+
+    <div class="card">
+      <strong>Open step</strong> (to do, in progress or blocked)
+      <table>
+        <tr><th>Button</th><th>What happens</th></tr>
+        <tr><td><span class="btn">I did my part</span><br><small>only when it waits on you</small></td><td>Draft: "Done on my side: ⟨what it waited for⟩. Continue with step 2.3 ⟨title⟩."</td></tr>
+        <tr><td><span class="btn">Continue this step</span><br><small>the current step, or the first open one</small></td><td>Draft: "Finish step 2.3 ⟨title⟩, then stop and tell me where we are…"</td></tr>
+        <tr><td><span class="btn">Work up to here</span><br><small>a later step</small></td><td>Draft: "Work through the plan up to step 3.1 (steps 2.3 to 3.1), then stop…"</td></tr>
+        <tr><td><span class="btn">Explain it (side answer)</span></td><td>What the step involves, why it is in the plan, and what is left.</td></tr>
+        <tr><td><span class="btn">Mark done</span></td><td>Marks it done now. Claude is told on your next message.</td></tr>
+      </table>
+      <small>Only one of the first three shows: "I did my part" first, then "Continue this step", then "Work up to here".</small>
+    </div>
+
+    <div class="card">
+      <strong>Done step</strong>
+      <table>
+        <tr><th>Button</th><th>What happens</th></tr>
+        <tr><td><span class="btn">Recap it (side answer)</span></td><td>What changed, what was decided, and what is left open.</td></tr>
+        <tr><td><span class="btn">Mark not done</span></td><td>Sets it back to to do. Claude is told on your next message.</td></tr>
+      </table>
+    </div>
+
+    <div class="card">
+      <strong>Dropped step</strong> (struck through)
+      <table>
+        <tr><th>Button</th><th>What happens</th></tr>
+        <tr><td><span class="btn">Bring it back</span></td><td>Draft: "Bring back step ⟨title⟩ (dropped: ⟨reason⟩). Put it back in the plan and say where it fits."</td></tr>
+        <tr><td><span class="btn">Why dropped? (side answer)</span></td><td>Why it was dropped and whether anything still depends on it.</td></tr>
+      </table>
+    </div>
+
+    <h3>Commit</h3>
+    <p>A dialog shows the short hash, the subject and its age, with <span class="btn">Explain it (side answer)</span> (what the commit changed and how it fits the plan) and <span class="btn">Close</span>.</p>
+
+    <h3>Drafts and side answers</h3>
+    <ul>
+      <li><strong>Drafts are never sent.</strong> They go into your message box, after anything you already typed, and a toast says so. You read and send them yourself, because they quote step titles Claude wrote.</li>
+      <li><strong>Side answers stay out of the chat.</strong> They run on a copy of the conversation at low effort and appear in a box in the pane ("Thinking…" first), like <code>/btw</code>.</li>
+      <li>Closing a dialog without picking does nothing. In a terminal the same applies: each line naming a step, phase or commit can be clicked.</li>
+      <li><strong>Mark done</strong> finishes the step. <strong>Clear</strong> in the waiting card only removes the wait.</li>
+    </ul>
+
+    <h2 id="en-claude">What Claude is told</h2>
+    <p>Wayfinder adds a short <code>[wayfinder]</code> note to your next message when something needs saying. Nothing is added while it is off.</p>
+    <ul>
+      <li>Commits, branch switches and rewritten history made outside the session.</li>
+      <li>Steps you marked done or not done, and waits you cleared.</li>
+      <li>Files another Wayfinder session also edited, once per file, so Claude checks before touching them.</li>
+      <li>A reminder when the plan is behind, or once when there is no plan yet.</li>
+    </ul>
+    <p>Git text and other sessions' goals reach Claude quoted and labelled as data, never as instructions.</p>
+
+    <h2 id="en-settings">Settings</h2>
+    <p>In the pane's <strong>▸ Settings</strong> block, or <code>/config</code> (stored in <code>settings.json</code> under <code>pluginConfigs</code>):</p>
+    <ul>
+      <li><strong>Turn on in new sessions</strong>: yes by default.</li>
+      <li><strong>Other sessions from the last N days</strong>: 7 by default.</li>
+      <li><strong>List at most N other sessions</strong>: 8 by default.</li>
+    </ul>
+    <p>Other open sessions use a change after <code>/reload-plugins</code>.</p>
+
+    <h2 id="en-limits">Known limits</h2>
+    <ul>
+      <li>Sessions closed before the mod was installed, and never reopened, are unknown to it.</li>
+      <li>Repos are found from the session's folder and absolute paths in Claude's tool calls. A relative <code>cd</code> is not followed.</li>
+      <li>A commit you make by hand while Claude's turn is running counts as the session's own.</li>
+      <li>All sessions share one 4 MiB store, and nothing prunes it yet.</li>
+    </ul>
+  </div>
+
+  <!-- ============================== FRANÇAIS ============================== -->
+  <div data-lang="fr">
+    <p class="lead">Un panneau à côté de la conversation Claude Code qui répond à « où en est-on ? » : le plan de la session, ses branches git, ce qui attend ta réponse, et ce qui a changé pendant ton absence.</p>
+    <nav>
+      <a href="#fr-plan">Le plan</a><a href="#fr-on">Activer, désactiver</a><a href="#fr-pane">Le panneau</a>
+      <a href="#fr-strip">Bandeau d’état</a><a href="#fr-clicks">Cliquer dans la frise</a><a href="#fr-claude">Ce que Claude apprend</a>
+      <a href="#fr-settings">Réglages</a><a href="#fr-limits">Limites connues</a>
+    </nav>
+
+    <h2 id="fr-plan">Le plan</h2>
+    <p>Chaque conversation avec Claude peut avoir son propre plan : un objectif, et les étapes pour y arriver. <strong>C’est Claude qui l’écrit, pas toi.</strong> Il apparaît dans le panneau dès que le travail compte plusieurs étapes, et Claude le tient à jour en avançant : une étape passe faite quand elle est finie, la suivante devient l’étape en cours, et une étape qui a besoin de toi le dit.</p>
+    <div class="chips"><span>Tu demandes quelque chose</span><i>→</i><span>Claude voit plusieurs étapes</span><i>→</i><span>le plan apparaît</span><i>→</i><span>les étapes se cochent au fil du travail</span><i>→</i><span>objectif atteint ✓</span></div>
+
+    <h3>Pourquoi certaines conversations n’ont pas de plan</h3>
+    <p>Toutes n’en ont pas, et c’est normal. Sans plan, le panneau montre quand même tes branches et tes commits, simplement sans étapes. Une conversation peut donc avoir plein de commits dans sa frise et toujours pas de plan.</p>
+    <figure data-fig="plans"></figure>
+    <ul>
+      <li><strong>Le travail était court.</strong> Une question, une petite correction ou un changement ponctuel n’ont pas besoin de plan.</li>
+      <li><strong>Claude l’a oublié.</strong> Quand une conversation avance sans plan, Wayfinder le rappelle une fois à Claude. C’est un rappel, pas un ordre, et Claude le rate parfois, même dans une longue conversation avec des commits.</li>
+      <li><strong>Wayfinder est désactivé dans cette conversation.</strong> Le panneau le dit alors et propose un bouton <span class="btn">Activer</span>.</li>
+    </ul>
+    <div class="card"><strong>Pas de plan là où tu en voudrais un ?</strong> Demande-le simplement : « note le plan dans Wayfinder ». Claude l’écrit à partir de ce qui a déjà été fait. Dans une conversation où Wayfinder est désactivé, <code>/wayfinder</code> l’active et demande le plan à Claude en une fois.</div>
+
+    <h3>Le garder à jour</h3>
+    <p>Quand Claude n’a pas touché au plan depuis quelques messages, ou que des commits sont arrivés depuis, le panneau affiche <strong>Plan en retard</strong> en orange et Claude reçoit un rappel. Tu peux aussi cocher une étape toi-même : clique dessus dans la frise et choisis <strong>Marquer faite</strong>.</p>
+
+    <h3>Un plan par conversation</h3>
+    <p>Chaque conversation garde son propre plan. Tes autres conversations apparaissent sous <strong>▸ Autres sessions</strong> avec leur objectif et leur étape en cours, et ce qui attend ta réponse chez elles s’affiche dans <strong>En attente de toi</strong>, visible depuis n’importe quelle conversation.</p>
+
+    <h2 id="fr-on">Activer, désactiver</h2>
+    <p>Wayfinder est activé par défaut dans les nouvelles sessions (réglage <em>Activer dans les nouvelles sessions</em>). Désactivé, il n’y a plus de panneau ni de notes à Claude, et l’outil de plan est caché : il ne coûte presque aucun token. Une session désactivée note quand même les fichiers qu’elle modifie, sans coût en tokens, pour que les autres sessions puissent signaler les fichiers partagés.</p>
+    <table>
+      <tr><th>Commande</th><th>Effet</th></tr>
+      <tr><td><code>/wayfinder</code></td><td>L’active dans cette session et ouvre le panneau. S’il n’y a pas encore de plan, ton prochain message demande aussi à Claude de noter le plan du travail fait jusqu’ici.</td></tr>
+      <tr><td><code>/wayfinder-off</code></td><td>Le désactive dans cette session.</td></tr>
+      <tr><td><code>/wayfinder-forget</code></td><td>Masque les autres sessions listées jusqu’à ce qu’elles avancent à nouveau. Leurs plans restent enregistrés.</td></tr>
+      <tr><td><code>/wayfinder-lang fr|en|auto</code></td><td>Choisit la langue du panneau dans toutes les sessions. <code>auto</code> suit le réglage <code>language</code> de Claude Code.</td></tr>
+    </table>
+
+    <h2 id="fr-pane">Le panneau, de haut en bas</h2>
+    <figure data-fig="pane"></figure>
+    <ol class="pane">
+      <li><strong>En attente de toi</strong> (cadre orange). Chaque étape ouverte, dans n’importe quelle session, qui attend ta réponse, regroupées par session.
+        <ul>
+          <li><span class="btn">Retirer</span> enlève l’attente quand tu l’as faite hors de Claude ou qu’elle ne compte plus. Elle disparaît de tous les panneaux. La session concernée retire l’attente de son plan, et son Claude est prévenu à ton prochain message dans cette conversation. L’étape elle-même reste ouverte.
+            <div class="chips"><span>Retirer</span><i>→</i><span>masquée dans tous les panneaux</span><i>→</i><span>la session retire l’attente</span><i>→</i><span>son Claude est prévenu à ton prochain message là-bas</span></div></li>
+          <li><span class="btn">Ouvrir ↗</span> à côté du nom d’une autre session affiche cette conversation dans l’application de bureau. Une session a ce bouton une fois qu’elle a démarré (ou été rechargée) avec cette version, car c’est là qu’elle enregistre son identifiant de bureau. Les sessions lancées dans un terminal n’en ont pas.</li>
+        </ul>
+      </li>
+      <li><strong>⚠ Aussi modifié dans une autre session</strong>. Les fichiers modifiés à la fois par cette session et une autre depuis un jour, avec l’objectif de l’autre session.</li>
+      <li><strong>Depuis ton départ</strong>. Affiché après 20 minutes ou plus sans message de ta part : commits hors de la session, commits de Claude, étapes terminées, changements de plan, historique réécrit, changements de branche, nouveaux stashs, autres sessions qui ont avancé, et l’étape suivante.
+        <ul><li><span class="btn">Compris</span> masque seulement ce cadre, en te comptant comme revenu. Claude n’en sait rien et aucun plan ne change. Le cadre revient après ta prochaine absence de 20 minutes.</li></ul>
+      </li>
+      <li><strong>Objectif</strong> et <strong>Où on en est</strong>. L’objectif passe au vert avec « ✓ ATTEINT » quand toutes les étapes restantes du plan sont faites. <strong>Plan en retard</strong> (orange) veut dire que Claude n’a pas mis à jour le plan depuis 3 tours, ou depuis 1 tour avec des commits depuis.</li>
+      <li>Cadre de <strong>réponse à part</strong>, quand tu as posé une question depuis une fenêtre (voir plus bas). Il a un bouton <span class="btn">Fermer</span>.</li>
+      <li><strong>Dépôts et frise</strong>. Pour chaque dépôt : branche, base, avance/retard, fichiers pas commités. Puis le graphe, le plus récent en bas :
+        <ul>
+          <li><strong>Blocs de phase</strong> : un cadre par phase, bleu pendant qu’elle est en cours, vert une fois faite, pâle avant de commencer. Les phases finies sont repliées au départ.</li>
+          <li><strong>Étapes</strong> : numérotées phase.étape (« 2.3 »). Bleues et en gras en cours (« tu es ici »), rouges si bloquées, pâles si faites ou à faire, barrées si abandonnées. Une étiquette indique « attend ta réponse », « bloquée depuis N tours », « abandonnée » ou « hors plan ».</li>
+          <li><strong>Commits</strong> dans la couleur de leur branche ; ceux faits ailleurs sont signalés. Les <strong>décisions</strong>, les <strong>stashs</strong>, les modifications pas commitées et la fusion prévue dans main apparaissent aussi.</li>
+        </ul>
+      </li>
+      <li><strong>Coût en tokens</strong>, une ligne pâle : ce que Wayfinder a coûté dans cette session (mises à jour du plan, notes à Claude, description de l’outil), environ 4 caractères par token.</li>
+      <li><strong>▸ Légende</strong> : le sens de chaque forme et couleur.</li>
+      <li><strong>Modifié hors de toute étape</strong> (orange), quand Claude a modifié des fichiers sans étape en cours.</li>
+      <li><strong>▸ Autres sessions</strong> : tes autres sessions où Wayfinder est activé, avec objectif, dépôts, étape en cours et dernière activité.</li>
+      <li><strong>▸ Réglages</strong>, puis le bouton <span class="btn">Mode d’emploi ↗</span> qui a ouvert cette page.</li>
+    </ol>
+
+    <h2 id="fr-strip">Bandeau d’état</h2>
+    <p>Une fine ligne encadrée au-dessus de la zone de message dit où en est le travail. Rien ne s’affiche sans plan.</p>
+    <table>
+      <tr><td><span class="strip" style="--c:var(--blue)"><b>En cours</b><span>2.3 Benchmark sur 1M lignes</span></span></td><td>L’étape actuelle.</td></tr>
+      <tr><td><span class="strip" style="--c:var(--orange)"><b>Attend ta réponse</b><span>le lancer sur staging</span></span></td><td>Une étape attend ta réponse : quoi exactement.</td></tr>
+      <tr><td><span class="strip" style="--c:var(--orange)"><b>Coincé</b><span>2.3 Benchmark sur 1M lignes</span></span></td><td>L’étape actuelle n’a pas bougé depuis 6 tours.</td></tr>
+      <tr><td><span class="strip" style="--c:var(--red)"><b>Bloqué</b><span>3.2 Ouvrir la PR</span></span></td><td>Une étape est bloquée.</td></tr>
+      <tr><td><span class="strip" style="--c:var(--purple)"><b>Hors plan</b><span>Corriger l’en-tête</span></span></td><td>Le plan a changé ce tour-ci, ou l’étape actuelle n’y figurait pas.</td></tr>
+      <tr><td><span class="strip" style="--c:var(--green)"><b>Objectif atteint</b><span>Ajouter l’export CSV</span></span></td><td>Toutes les étapes sont faites.</td></tr>
+    </table>
+
+    <h2 id="fr-clicks">Cliquer dans la frise</h2>
+    <p>Trois sortes de lignes sont cliquables : les <strong>en-têtes de phase</strong>, les <strong>étapes</strong> et les <strong>commits</strong>. Les lignes de décision, de stash et « fichiers modifiés » ne font rien.</p>
+    <figure data-fig="timeline"></figure>
+
+    <h3>En-tête de phase</h3>
+    <p>Replie ou déplie la phase. Ton choix est gardé.</p>
+
+    <h3>Étape</h3>
+    <p>Une fenêtre « Étape 2.3 » montre le titre et l’état de l’étape avec quand elle a commencé ou fini, à quoi elle sert, sa note de résultat, ce qu’elle attend, pourquoi elle a été ajoutée en cours de route ou abandonnée, et les fichiers modifiés pendant celle-ci. Les boutons dépendent de l’état de l’étape.</p>
+    <figure data-fig="dialog"></figure>
+
+    <div class="card">
+      <strong>Étape ouverte</strong> (à faire, en cours ou bloquée)
+      <table>
+        <tr><th>Bouton</th><th>Effet</th></tr>
+        <tr><td><span class="btn">J’ai fait ma part</span><br><small>seulement si elle attend ta réponse</small></td><td>Brouillon : « C’est fait de mon côté : ⟨ce qu’elle attendait⟩. Continue avec l’étape 2.3 ⟨titre⟩. »</td></tr>
+        <tr><td><span class="btn">Continuer cette étape</span><br><small>l’étape en cours, ou la première ouverte</small></td><td>Brouillon : « Termine l’étape 2.3 ⟨titre⟩, puis arrête-toi et dis-moi où on en est… »</td></tr>
+        <tr><td><span class="btn">Avancer jusqu’ici</span><br><small>une étape plus loin</small></td><td>Brouillon : « Avance dans le plan jusqu’à l’étape 3.1 (étapes 2.3 à 3.1), puis arrête-toi… »</td></tr>
+        <tr><td><span class="btn">L’expliquer (réponse à part)</span></td><td>En quoi consiste l’étape, pourquoi elle est dans le plan, et ce qu’il reste.</td></tr>
+        <tr><td><span class="btn">Marquer faite</span></td><td>La marque faite maintenant. Claude est prévenu à ton prochain message.</td></tr>
+      </table>
+      <small>Un seul des trois premiers s’affiche : « J’ai fait ma part » d’abord, puis « Continuer cette étape », puis « Avancer jusqu’ici ».</small>
+    </div>
+
+    <div class="card">
+      <strong>Étape faite</strong>
+      <table>
+        <tr><th>Bouton</th><th>Effet</th></tr>
+        <tr><td><span class="btn">Résumer (réponse à part)</span></td><td>Ce qui a changé, ce qu’on a décidé, et ce qui reste ouvert.</td></tr>
+        <tr><td><span class="btn">Marquer non faite</span></td><td>La remet à faire. Claude est prévenu à ton prochain message.</td></tr>
+      </table>
+    </div>
+
+    <div class="card">
+      <strong>Étape abandonnée</strong> (barrée)
+      <table>
+        <tr><th>Bouton</th><th>Effet</th></tr>
+        <tr><td><span class="btn">La reprendre</span></td><td>Brouillon : « Reprends l’étape ⟨titre⟩ (abandonnée : ⟨raison⟩). Remets-la dans le plan et dis où elle s’insère. »</td></tr>
+        <tr><td><span class="btn">Pourquoi abandonnée ? (réponse à part)</span></td><td>Pourquoi elle a été abandonnée, et si quelque chose en dépend encore.</td></tr>
+      </table>
+    </div>
+
+    <h3>Commit</h3>
+    <p>Une fenêtre montre le hash court, le sujet et l’âge du commit, avec <span class="btn">L’expliquer (réponse à part)</span> (ce que le commit a changé et comment il s’inscrit dans le plan) et <span class="btn">Fermer</span>.</p>
+
+    <h3>Brouillons et réponses à part</h3>
+    <ul>
+      <li><strong>Les brouillons ne sont jamais envoyés.</strong> Ils vont dans ta zone de message, après ce que tu as déjà tapé, et une notification le dit. Tu les relis et les envoies toi-même, car ils citent des titres d’étape écrits par Claude.</li>
+      <li><strong>Les réponses à part restent hors de la conversation.</strong> Elles tournent sur une copie de la conversation, en effort réduit, et s’affichent dans un cadre du panneau (« Réflexion… » d’abord), comme <code>/btw</code>.</li>
+      <li>Fermer une fenêtre sans choisir ne fait rien. Dans un terminal c’est pareil : chaque ligne qui nomme une étape, une phase ou un commit est cliquable.</li>
+      <li><strong>Marquer faite</strong> termine l’étape. <strong>Retirer</strong> dans le cadre d’attente enlève seulement l’attente.</li>
+    </ul>
+
+    <h2 id="fr-claude">Ce que Claude apprend</h2>
+    <p>Wayfinder ajoute une courte note <code>[wayfinder]</code> à ton prochain message quand il y a quelque chose à dire. Rien n’est ajouté quand il est désactivé.</p>
+    <ul>
+      <li>Les commits, changements de branche et historiques réécrits faits hors de la session.</li>
+      <li>Les étapes que tu as marquées faites ou non faites, et les attentes que tu as retirées.</li>
+      <li>Les fichiers qu’une autre session Wayfinder a aussi modifiés, une fois par fichier, pour que Claude vérifie avant d’y toucher.</li>
+      <li>Un rappel quand le plan est en retard, ou une fois quand il n’y a pas encore de plan.</li>
+    </ul>
+    <p>Le texte venant de git et les objectifs des autres sessions arrivent à Claude entre guillemets et présentés comme des données, jamais comme des instructions.</p>
+
+    <h2 id="fr-settings">Réglages</h2>
+    <p>Dans le bloc <strong>▸ Réglages</strong> du panneau, ou <code>/config</code> (enregistrés dans <code>settings.json</code> sous <code>pluginConfigs</code>) :</p>
+    <ul>
+      <li><strong>Activer dans les nouvelles sessions</strong> : oui par défaut.</li>
+      <li><strong>Autres sessions des N derniers jours</strong> : 7 par défaut.</li>
+      <li><strong>Lister au plus N autres sessions</strong> : 8 par défaut.</li>
+    </ul>
+    <p>Les autres sessions ouvertes utilisent un changement après <code>/reload-plugins</code>.</p>
+
+    <h2 id="fr-limits">Limites connues</h2>
+    <ul>
+      <li>Les sessions fermées avant l’installation du mod, et jamais rouvertes, lui sont inconnues.</li>
+      <li>Les dépôts sont trouvés depuis le dossier de la session et les chemins absolus des appels d’outils de Claude. Un <code>cd</code> relatif n’est pas suivi.</li>
+      <li>Un commit fait à la main pendant que Claude travaille compte comme celui de la session.</li>
+      <li>Toutes les sessions partagent un seul stockage de 4 Mio, et rien ne le nettoie encore.</li>
+    </ul>
+  </div>
+</main>
+
+<!-- ============================== FIGURES (both languages inside) ============================== -->
+<template id="t-plans">
+  <div class="two">
+    <div>
+      <div class="tag"><span class="en">Without a plan</span><span class="fr">Sans plan</span></div>
+      <div class="mock">
+        <div>
+          <div class="h"><span class="en">No plan yet</span><span class="fr">Pas encore de plan</span></div>
+          <div class="d"><span class="en">Claude records the plan here once the work has several steps.</span><span class="fr">Claude note le plan ici dès que le travail compte plusieurs étapes.</span></div>
+        </div>
+        <div>
+          <div class="b">shop · main</div>
+          <div class="row"><span class="t-b">●</span><span class="mono">c41e9a2 fix price rounding</span></div>
+          <div class="row"><span class="t-b">●</span><span class="mono">8d03f7b add order history page</span></div>
+          <div class="row"><span class="d">●</span><span class="mono d">5b7a1e0 update dependencies</span></div>
+        </div>
+      </div>
+    </div>
+    <div>
+      <div class="tag"><span class="en">With a plan</span><span class="fr">Avec un plan</span></div>
+      <div class="mock">
+        <div>
+          <div class="sm d b"><span class="en">GOAL</span><span class="fr">OBJECTIF</span></div>
+          <div class="h"><span class="en">Add CSV export</span><span class="fr">Ajouter l’export CSV</span></div>
+          <div class="d"><b><span class="en">Where we are: </span><span class="fr">Où on en est : </span></b><span class="en">writer done; benchmark next.</span><span class="fr">écriture faite ; benchmark ensuite.</span></div>
+        </div>
+        <div>
+          <div class="b">r · feature/export</div>
+          <div class="card2 bl" style="padding:3px 10px;background:color-mix(in srgb, var(--blue) 8%, transparent)">
+            <div class="b t-b">▾ 2 Build · <span class="en">step 2 of 3</span><span class="fr">étape 2 sur 3</span></div>
+            <div class="row"><span class="t-g">✓</span><span class="d">2.1 <span class="en">CSV writer</span><span class="fr">Écriture CSV</span></span></div>
+            <div class="row"><span class="t-b">●</span><span class="mono">bbbbbbb add CSV writer</span></div>
+            <div class="row"><span class="t-b">◉</span><span class="b t-b">2.2 Benchmark</span><span class="t-o">· <span class="en">waiting on you</span><span class="fr">attend ta réponse</span></span></div>
+            <div class="row"><span class="d">○</span><span class="d">2.3 <span class="en">Docs</span><span class="fr">Docs</span></span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <figcaption><span class="en">Same pane, two conversations: without a plan you only get commits; with one, the steps and where you are.</span><span class="fr">Même panneau, deux conversations : sans plan, seulement les commits ; avec un plan, les étapes et où tu en es.</span></figcaption>
+</template>
+
+<template id="t-pane">
+  <div class="mockwrap"><div class="mock">
+    <div class="sec card2 o"><span class="n">1</span>
+      <div class="b t-o"><span class="en">Waiting on you · 2</span><span class="fr">En attente de toi · 2</span></div>
+      <div class="b" style="margin-top:6px"><span class="en">This session</span><span class="fr">Cette session</span></div>
+      <div class="row ind sm">• <span class="en">Benchmark on 1M rows</span><span class="fr">Benchmark sur 1M lignes</span> <span class="mbtn"><span class="en">Clear</span><span class="fr">Retirer</span></span></div>
+      <div class="ind2 sm d"><span class="en">run it on staging</span><span class="fr">le lancer sur staging</span></div>
+      <div class="row b" style="margin-top:6px"><span class="en">Fix login redirect</span><span class="fr">Corriger la redirection</span> <span class="mbtn" style="font-weight:400"><span class="en">Open chat ↗</span><span class="fr">Ouvrir ↗</span></span></div>
+      <div class="row ind sm">• <span class="en">Confirm the SSO callback URL</span><span class="fr">Confirmer l’URL de retour SSO</span> <span class="mbtn"><span class="en">Clear</span><span class="fr">Retirer</span></span></div>
+    </div>
+    <div class="sec card2 o"><span class="n">2</span>
+      <div class="b t-o"><span class="en">⚠ Also edited in another session</span><span class="fr">⚠ Aussi modifié dans une autre session</span></div>
+      <div class="d">Login fix</div><div class="ind">• auth.ts</div>
+    </div>
+    <div class="sec card2 bl"><span class="n">3</span>
+      <div class="b"><span class="en">Since you left (1 h ago)</span><span class="fr">Depuis ton départ (il y a 1 h)</span></div>
+      <div class="d"><span class="en">· 2 commit(s) outside this session: api</span><span class="fr">· 2 commit(s) hors de cette session : api</span></div>
+      <div><span class="en">Next: Benchmark on 1M rows (waiting on you)</span><span class="fr">Ensuite : Benchmark sur 1M lignes (attend ta réponse)</span></div>
+      <span class="mbtn"><span class="en">Got it</span><span class="fr">Compris</span></span>
+    </div>
+    <div class="sec"><span class="n">4</span>
+      <div class="sm d b"><span class="en">GOAL</span><span class="fr">OBJECTIF</span></div>
+      <div class="h"><span class="en">Add CSV export</span><span class="fr">Ajouter l’export CSV</span></div>
+      <div class="d"><b><span class="en">Where we are: </span><span class="fr">Où on en est : </span></b><span class="en">writer streams rows; benchmark next.</span><span class="fr">l’écriture streame les lignes ; benchmark ensuite.</span></div>
+    </div>
+    <div class="sec card2"><span class="n">5</span>
+      <div class="b"><span class="en">Explain it: 2.3 Benchmark</span><span class="fr">L’expliquer : 2.3 Benchmark</span> <span class="d" style="font-weight:400"><span class="en">· side answer, not in the chat</span><span class="fr">· réponse à part, hors de la conversation</span></span></div>
+      <div class="d"><span class="en">Runs the export on 1M rows to check memory stays flat…</span><span class="fr">Lance l’export sur 1M lignes pour vérifier que la mémoire reste stable…</span></div>
+      <span class="mbtn"><span class="en">Close</span><span class="fr">Fermer</span></span>
+    </div>
+    <div class="sec"><span class="n">6</span>
+      <div class="b">r · feature/export <span class="d" style="font-weight:400"><span class="en">from main · not pushed</span><span class="fr">depuis main · pas poussé</span></span></div>
+      <div class="card2 gr" style="margin-top:6px;padding:3px 10px"><span class="d b">▸ 1 <span class="en">Investigate · 2 steps done</span><span class="fr">Enquêter · 2 étapes faites</span></span></div>
+      <div class="card2 bl" style="margin-top:4px;padding:3px 10px;background:color-mix(in srgb, var(--blue) 8%, transparent)">
+        <div class="b t-b">▾ 2 Build · <span class="en">step 3 of 3</span><span class="fr">étape 3 sur 3</span></div>
+        <div class="row"><span class="t-g">✓</span><span class="d">2.2 <span class="en">Stream rows</span><span class="fr">Streamer les lignes</span></span></div>
+        <div class="row"><span class="t-b">◉</span><span class="b t-b">2.3 Benchmark</span><span class="t-o">· <span class="en">waiting on you</span><span class="fr">attend ta réponse</span></span></div>
+      </div>
+    </div>
+    <div class="sec sm d"><span class="n">7</span><span class="en">≈ 2.1k tokens used by Wayfinder here · plan updates 1.4k · notes 300 …</span><span class="fr">≈ 2,1k tokens utilisés par Wayfinder ici · mises à jour du plan 1,4k · notes 300 …</span></div>
+    <div class="sec d"><span class="n">8</span>▸ <span class="en">Legend</span><span class="fr">Légende</span></div>
+    <div class="sec t-o"><span class="n">9</span><span class="en">Edited while no step was current: notes.md</span><span class="fr">Modifié hors de toute étape : notes.md</span></div>
+    <div class="sec d"><span class="n">10</span>▸ <span class="en">1 other session</span><span class="fr">1 autre session</span></div>
+    <div class="sec"><span class="n">11</span><div class="d">▸ <span class="en">Settings</span><span class="fr">Réglages</span></div><span class="mbtn" style="margin-top:6px"><span class="en">How it works ↗</span><span class="fr">Mode d’emploi ↗</span></span></div>
+  </div></div>
+  <figcaption><span class="en">The pane with every block showing. The numbers match the list below; most blocks only appear when they have something to say.</span><span class="fr">Le panneau avec tous ses blocs. Les numéros correspondent à la liste ci-dessous ; la plupart des blocs n’apparaissent que s’ils ont quelque chose à dire.</span></figcaption>
+</template>
+
+<template id="t-timeline">
+  <svg viewBox="0 0 900 420" role="img" aria-label="Timeline rows and clicks / Lignes de la frise et clics">
+    <path d="M28 14 V404" stroke="var(--dim)" stroke-opacity="0.5" stroke-width="2" fill="none"/>
+    <path d="M28 24 C28 40 50 36 50 54 V250" stroke="var(--blue)" stroke-width="2.5" fill="none"/>
+    <path d="M50 250 V376 C50 394 28 388 28 404" stroke="var(--blue)" stroke-width="2" stroke-dasharray="4 4" fill="none"/>
+
+    <rect x="66" y="40" width="430" height="28" rx="8" fill="none" stroke="var(--green)" stroke-width="1.5"/>
+    <rect x="66" y="76" width="430" height="188" rx="8" fill="var(--blue)" fill-opacity="0.07" stroke="var(--blue)" stroke-width="1.5"/>
+    <rect x="66" y="272" width="430" height="112" rx="8" fill="none" stroke="var(--dim)" stroke-opacity="0.45" stroke-width="1.5"/>
+
+    <circle cx="28" cy="24" r="5" fill="var(--dim)"/>
+    <circle cx="50" cy="120" r="5" fill="var(--blue)"/>
+    <polygon points="50,140 56,146 50,152 44,146" fill="var(--card)" stroke="var(--purple)" stroke-width="1.8"/>
+    <circle cx="50" cy="172" r="7" fill="var(--green)"/><path d="M46.5 172 l2.5 2.5 l4.5 -5" stroke="#fff" stroke-width="1.8" fill="none"/>
+    <circle cx="28" cy="198" r="5" fill="var(--orange)"/>
+    <circle cx="50" cy="224" r="8.5" fill="var(--card)" stroke="var(--blue)" stroke-width="2.5"/><circle cx="50" cy="224" r="3.5" fill="var(--blue)"/>
+    <circle cx="50" cy="250" r="6" fill="var(--card)" stroke="var(--dim)" stroke-width="1.5" stroke-dasharray="2 2"/>
+    <circle cx="50" cy="314" r="6" fill="var(--card)" stroke="var(--dim)" stroke-width="1.5"/>
+    <circle cx="50" cy="340" r="7" fill="var(--red)"/><path d="M47 337 l6 6 M53 337 l-6 6" stroke="#fff" stroke-width="1.8"/>
+    <circle cx="50" cy="366" r="6" fill="var(--card)" stroke="var(--dim)" stroke-width="1.5"/><path d="M45.5 370.5 l9 -9" stroke="var(--dim)" stroke-width="1.5"/>
+    <circle cx="28" cy="404" r="5" fill="var(--card)" stroke="var(--dim)" stroke-width="1.5"/>
+
+    <g font-size="13">
+      <text x="78" y="28" class="mono dim">0000000 release 1.4</text>
+      <text x="78" y="124" class="mono">bbbbbbb add CSV writer</text>
+      <text x="78" y="202" class="mono">ccccccc hotfix: null header<tspan class="en" style="fill:var(--orange)"> · outside</tspan><tspan class="fr" style="fill:var(--orange)"> · extérieur</tspan></text>
+      <g class="en">
+        <text x="78" y="58" class="dim" font-weight="600">▸ 1 Investigate · 2 steps done · 1 commit</text>
+        <text x="78" y="98" font-weight="600" style="fill:var(--blue)">▾ 2 Build · step 3 of 3</text>
+        <text x="78" y="150" class="dim">Decision: stream rows instead of buffering</text>
+        <text x="78" y="176" class="dim">2.1 CSV writer</text>
+        <text x="78" y="228"><tspan font-weight="600" style="fill:var(--blue)">2.3 Benchmark on 1M rows</tspan><tspan style="fill:var(--orange)"> · waiting on you</tspan></text>
+        <text x="78" y="254">2 files changed, not committed</text>
+        <text x="78" y="292" class="dim" font-weight="600">▾ 3 Ship · 3 steps</text>
+        <text x="78" y="318" class="dim">3.1 Docs</text>
+        <text x="78" y="344" style="fill:var(--red)">3.2 Open PR</text>
+        <text x="78" y="370" class="dim" text-decoration="line-through">3.3 Old idea</text>
+        <text x="78" y="408" class="dim">Merge into main (planned)</text>
+      </g>
+      <g class="fr">
+        <text x="78" y="58" class="dim" font-weight="600">▸ 1 Enquêter · 2 étapes faites · 1 commit</text>
+        <text x="78" y="98" font-weight="600" style="fill:var(--blue)">▾ 2 Construire · étape 3 sur 3</text>
+        <text x="78" y="150" class="dim">Décision : streamer au lieu de tout charger</text>
+        <text x="78" y="176" class="dim">2.1 Écriture CSV</text>
+        <text x="78" y="228"><tspan font-weight="600" style="fill:var(--blue)">2.3 Benchmark sur 1M lignes</tspan><tspan style="fill:var(--orange)"> · attend ta réponse</tspan></text>
+        <text x="78" y="254">2 fichiers modifiés, pas encore commités</text>
+        <text x="78" y="292" class="dim" font-weight="600">▾ 3 Livrer · 3 étapes</text>
+        <text x="78" y="318" class="dim">3.1 Docs</text>
+        <text x="78" y="344" style="fill:var(--red)">3.2 Ouvrir la PR</text>
+        <text x="78" y="370" class="dim" text-decoration="line-through">3.3 Ancienne idée</text>
+        <text x="78" y="408" class="dim">Fusion dans main (prévue)</text>
+      </g>
+    </g>
+
+    <g font-size="12">
+      <g class="en">
+        <text x="510" y="28"><tspan font-weight="600">← commit</tspan><tspan class="dim"> · click: Explain or Close</tspan></text>
+        <text x="510" y="58"><tspan font-weight="600">← finished phase, folded</tspan><tspan class="dim"> · click: unfold</tspan></text>
+        <text x="510" y="98"><tspan font-weight="600">← current phase</tspan><tspan class="dim"> · click: fold</tspan></text>
+        <text x="510" y="124"><tspan font-weight="600">← commit</tspan><tspan class="dim"> · click: Explain or Close</tspan></text>
+        <text x="510" y="150"><tspan font-weight="600">← decision</tspan><tspan class="dim"> · not clickable</tspan></text>
+        <text x="510" y="176"><tspan font-weight="600">← done step</tspan><tspan class="dim"> · click: Recap, Mark not done</tspan></text>
+        <text x="510" y="202"><tspan font-weight="600">← commit made elsewhere</tspan><tspan class="dim"> · click: Explain or Close</tspan></text>
+        <text x="510" y="228"><tspan font-weight="600" style="fill:var(--blue)">← you are here</tspan><tspan class="dim"> · click: I did my part, Explain, Mark done</tspan></text>
+        <text x="510" y="254"><tspan font-weight="600">← not committed yet</tspan><tspan class="dim"> · not clickable</tspan></text>
+        <text x="510" y="292"><tspan font-weight="600">← phase not started</tspan><tspan class="dim"> · click: fold</tspan></text>
+        <text x="510" y="318"><tspan font-weight="600">← to do</tspan><tspan class="dim"> · click: Work up to here, Explain, Mark done</tspan></text>
+        <text x="510" y="344"><tspan font-weight="600" style="fill:var(--red)">← blocked</tspan><tspan class="dim"> · same menu as to do</tspan></text>
+        <text x="510" y="370"><tspan font-weight="600">← dropped</tspan><tspan class="dim"> · click: Bring it back, Why dropped?</tspan></text>
+        <text x="510" y="408"><tspan font-weight="600">← planned merge</tspan><tspan class="dim"> · not clickable</tspan></text>
+      </g>
+      <g class="fr">
+        <text x="510" y="28"><tspan font-weight="600">← commit</tspan><tspan class="dim"> · clic : L’expliquer ou Fermer</tspan></text>
+        <text x="510" y="58"><tspan font-weight="600">← phase finie, repliée</tspan><tspan class="dim"> · clic : déplier</tspan></text>
+        <text x="510" y="98"><tspan font-weight="600">← phase en cours</tspan><tspan class="dim"> · clic : replier</tspan></text>
+        <text x="510" y="124"><tspan font-weight="600">← commit</tspan><tspan class="dim"> · clic : L’expliquer ou Fermer</tspan></text>
+        <text x="510" y="150"><tspan font-weight="600">← décision</tspan><tspan class="dim"> · pas cliquable</tspan></text>
+        <text x="510" y="176"><tspan font-weight="600">← étape faite</tspan><tspan class="dim"> · clic : Résumer, Marquer non faite</tspan></text>
+        <text x="510" y="202"><tspan font-weight="600">← commit fait ailleurs</tspan><tspan class="dim"> · clic : L’expliquer ou Fermer</tspan></text>
+        <text x="510" y="228"><tspan font-weight="600" style="fill:var(--blue)">← tu es ici</tspan><tspan class="dim"> · clic : J’ai fait ma part, L’expliquer…</tspan></text>
+        <text x="510" y="254"><tspan font-weight="600">← pas encore commité</tspan><tspan class="dim"> · pas cliquable</tspan></text>
+        <text x="510" y="292"><tspan font-weight="600">← phase pas commencée</tspan><tspan class="dim"> · clic : replier</tspan></text>
+        <text x="510" y="318"><tspan font-weight="600">← à faire</tspan><tspan class="dim"> · clic : Avancer jusqu’ici, L’expliquer…</tspan></text>
+        <text x="510" y="344"><tspan font-weight="600" style="fill:var(--red)">← bloquée</tspan><tspan class="dim"> · même menu qu’« à faire »</tspan></text>
+        <text x="510" y="370"><tspan font-weight="600">← abandonnée</tspan><tspan class="dim"> · clic : La reprendre, Pourquoi ?</tspan></text>
+        <text x="510" y="408"><tspan font-weight="600">← fusion prévue</tspan><tspan class="dim"> · pas cliquable</tspan></text>
+      </g>
+    </g>
+  </svg>
+  <figcaption><span class="en">One branch of a timeline, and what each kind of row does when you click it.</span><span class="fr">Une branche de la frise, et ce que fait chaque sorte de ligne quand tu cliques dessus.</span></figcaption>
+</template>
+
+<template id="t-dialog">
+  <div class="dlg">
+    <div class="ask">
+      <div class="top">
+        <div class="b" style="font-weight:600"><span class="en">Step 2.3</span><span class="fr">Étape 2.3</span></div>
+        <div><span class="en">2.3 Benchmark on 1M rows (doing, started 25m ago)</span><span class="fr">2.3 Benchmark sur 1M lignes (en cours, commencée il y a 25 min)</span></div>
+        <div style="color:var(--dim)"><span class="en">Waiting on you: run it on staging</span><span class="fr">En attente de toi : le lancer sur staging</span></div>
+        <div style="color:var(--dim)"><span class="en">Files: bench.ts</span><span class="fr">Fichiers : bench.ts</span></div>
+        <div style="margin-top:6px"><span class="en">What do you want to do?</span><span class="fr">Que veux-tu faire ?</span></div>
+      </div>
+      <div class="opt"><span class="radio"></span><span class="en">I did my part</span><span class="fr">J’ai fait ma part</span><span class="k" style="--c:var(--blue)">1</span></div>
+      <div class="opt"><span class="radio"></span><span class="en">Explain it (side answer)</span><span class="fr">L’expliquer (réponse à part)</span><span class="k" style="--c:var(--purple)">2</span></div>
+      <div class="opt"><span class="radio"></span><span class="en">Mark done</span><span class="fr">Marquer faite</span><span class="k" style="--c:var(--green)">3</span></div>
+    </div>
+    <div class="outs">
+      <div class="out" style="--c:var(--blue)">
+        <div class="what">1 · <span class="en">A draft in your message box</span><span class="fr">Un brouillon dans ta zone de message</span></div>
+        <div><span class="en">Never sent: you read it, then press Enter yourself.</span><span class="fr">Jamais envoyé : tu le relis, puis tu appuies toi-même sur Entrée.</span></div>
+        <div class="eg"><span class="en">Done on my side: run it on staging. Continue with step 2.3 "Benchmark on 1M rows".</span><span class="fr">C’est fait de mon côté : le lancer sur staging. Continue avec l’étape 2.3 « Benchmark sur 1M lignes ».</span></div>
+      </div>
+      <div class="out" style="--c:var(--purple)">
+        <div class="what">2 · <span class="en">A side answer in the pane</span><span class="fr">Une réponse à part dans le panneau</span></div>
+        <div><span class="en">Answered on a copy of the chat, never added to it, like /btw.</span><span class="fr">Répondue sur une copie de la conversation, jamais ajoutée à celle-ci, comme /btw.</span></div>
+      </div>
+      <div class="out" style="--c:var(--green)">
+        <div class="what">3 · <span class="en">The plan changes</span><span class="fr">Le plan change</span></div>
+        <div><span class="en">The step turns ✓ done now; Claude is told on your next message.</span><span class="fr">L’étape passe ✓ faite tout de suite ; Claude est prévenu à ton prochain message.</span></div>
+      </div>
+    </div>
+  </div>
+  <figcaption><span class="en">Clicking a step that waits on you: the dialog, and where each choice goes.</span><span class="fr">Clic sur une étape qui attend ta réponse : la fenêtre, et où va chaque choix.</span></figcaption>
+</template>
+
+<script>
+  // Each figure is written once above and copied into both languages.
+  for (const f of document.querySelectorAll('figure[data-fig]')) f.append(document.getElementById('t-' + f.dataset.fig).content.cloneNode(true))
+  // The language: the one picked here last, else the browser's.
+  const pick = lang => {
+    document.documentElement.lang = lang
+    document.title = lang === 'fr' ? 'Wayfinder : mode d’emploi' : 'Wayfinder: guide'
+    for (const b of document.querySelectorAll('[data-set]')) b.setAttribute('aria-pressed', String(b.dataset.set === lang))
+    try { localStorage.setItem('wayfinder-guide-lang', lang) } catch {}
+  }
+  let saved = null
+  try { saved = localStorage.getItem('wayfinder-guide-lang') } catch {}
+  pick(saved === 'fr' || saved === 'en' ? saved : navigator.language.toLowerCase().startsWith('fr') ? 'fr' : 'en')
+  for (const b of document.querySelectorAll('[data-set]')) b.addEventListener('click', () => pick(b.dataset.set))
+</script>
+</body>
+</html>

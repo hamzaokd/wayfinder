@@ -205,7 +205,7 @@ test('a click on a step offers what fits it: work goes to the session, questions
 const opened: (readonly string[])[] = []
 function fakeGit(on: On, repo: { head: string; log: string }) {
   on('process.run', (_, e) => {
-    if (e.argv.at(-1)?.startsWith('claude://')) return opened.push(e.argv), { value: { exitCode: 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+    if (e.argv.at(-1)?.startsWith('claude://') || e.argv.at(-1)?.endsWith('.html')) return opened.push(e.argv), { value: { exitCode: 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
     // Every git call the mod makes is hardened against the repo's own config.
     expect(e.argv.slice(0, GIT.length)).toEqual([...GIT])
     const a = e.argv.slice(GIT.length).join(' ')
@@ -547,6 +547,8 @@ test('a waiting item: Clear drops it and tells Claude; another desktop session l
   // Its name opens its chat through the system's opener: a pane draws only https links.
   await ui.press({ key: 'chat-w-2' })
   expect(opened.at(-1)).toEqual(['cmd.exe', '/c', 'start', '', `claude://claude.ai/epitaxy/${host}`])
+  // The guide button sits at the bottom; its folder comes from the host, which the test kit has none of.
+  expect(await ui.find({ key: 'guide' })).toBeTruthy()
   await ui.press({ key: `clear-${clearKey('w-1', 'Bench')}` })
   expect(await ui.find({ type: 'Text', text: 'Waiting on you · 1' })).toBeTruthy()
   expect(await ui.find({ type: 'Text', text: /• Answer/ })).toBeTruthy()
