@@ -570,7 +570,11 @@ export const register: Register = (on, opts: PluginOptions) => {
   on('command.run', { command: 'wayfinder' }, async ($, e) => {
     if (e.args.trim()) return { text: T.cmdUsage }
     if (await active($)) {
-      await $.ui.open({ id: PANE, title: 'Wayfinder' })
+      // ui.open on a pane Claude Code still lists as open changes nothing: no redraw, not shown again
+      // (closed in the app without the CLI hearing, or blank there). Close it and open it afresh.
+      await $.ui.close({ id: PANE })
+      const res = await $.ui.open({ id: PANE, title: 'Wayfinder', focus: true })
+      note(`/wayfinder reopened the pane: ${res.isPlaced ? 'placed' : `not placed (${res.reason})`}`)
       return { text: T.cmdOpened }
     }
     return { text: (await turnOn($)) ? T.cmdOnAsk : T.cmdOn }
@@ -634,8 +638,12 @@ export const register: Register = (on, opts: PluginOptions) => {
     const lines = [...t.pending]
     const since = t.turn - t.planTurn
     let hasNudged = t.hasNudged
+    const waits = t.steps.filter(s => s.waitingOn === 'you' && s.status !== 'done' && s.status !== 'dropped')
     if (t.steps.length > 0 && (since >= 3 || (since >= 1 && t.commitsSincePlan > 0))) {
       lines.push(`Your Wayfinder plan was last updated ${since} turn(s) ago${t.commitsSincePlan ? `, with ${t.commitsSincePlan} commit(s) since` : ''}. If progress changed, call ${PROGRESS_TOOL}.`)
+    } else if (waits.length > 0) {
+      // The user's reply is when a wait ends (answered, done, or no longer wanted): the plan must follow it then, not turns later.
+      lines.push(`Your plan has step(s) waiting on the user: ${waits.map(s => quoted(s.title)).join(', ')}. If this message settles one (an answer, done, or not wanted), call ${PROGRESS_TOOL} in this turn.`)
     } else if (t.steps.length === 0 && t.turn >= 1 && !hasNudged) {
       lines.push(`No plan is recorded for this session yet. If this work has several steps, record it with ${PROGRESS_TOOL}.`)
       hasNudged = true
