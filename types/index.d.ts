@@ -90,7 +90,8 @@ export type Lane = {
   forkFrom?: string
 }
 
-export type GraphCommit = { hash: string; parents: string[]; at: number; subject: string; lane: number }
+/** `refs`: branches whose tip is this commit and that got no lane of their own. */
+export type GraphCommit = { hash: string; parents: string[]; at: number; subject: string; lane: number; refs?: string[] }
 
 export type Stash = { name: string; subject: string; at: number; parent: string; branch?: string }
 

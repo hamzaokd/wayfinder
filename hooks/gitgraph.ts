@@ -171,18 +171,24 @@ export async function repoGraph($: $, live: RepoLive, ctx: GraphCtx): Promise<Re
     if (c) lane.forkFrom = c.hash
   })
 
-  // Keep the graph short: the newest commits of each lane, plus every fork point.
-  const forkPoints = new Set(lanes.map(l => l.forkFrom).filter(Boolean))
+  const refsOf = dropEmptyLanes(lanes, all)
+
+  // Keep the graph short: the newest commits of each lane, plus every fork point and named commit.
+  const forkPoints = new Set([...lanes.map(l => l.forkFrom).filter(Boolean), ...refsOf.keys()])
   const kept: GraphCommit[] = []
   let skipped = 0
   lanes.forEach((lane, i) => {
     const mine = all.filter(c => c.lane === i)
     const limit = lane.isBase ? BASE_KEEP : MAX_PER_LANE
     mine.forEach((c, k) => {
-      if (k < limit || forkPoints.has(c.hash)) kept.push(c)
+      if (k < limit || forkPoints.has(c.hash)) kept.push(refsOf.has(c.hash) ? { ...c, refs: refsOf.get(c.hash) } : c)
       else skipped += 1
     })
   })
+
+  // Oldest first in git's own order (--date-order: never a parent after its child), not by date: a
+  // rebased commit's date can be older than its parent's, which drew lines running back up.
+  const order = new Map(all.map((c, k) => [c.hash, k]))
 
   const stashOut = (await git($, root, ['stash', 'list', '--format=%gd%x09%s%x09%ct%x09%P'])) ?? ''
   const stashes: Stash[] = stashOut.split('\n').filter(Boolean).map(l => {
@@ -190,7 +196,25 @@ export async function repoGraph($: $, live: RepoLive, ctx: GraphCtx): Promise<Re
     return { name, subject, at: Number(at) * 1000, parent: parents.split(' ')[0] ?? '', branch: /^(?:WIP on|On) ([^:]+):/.exec(subject)?.[1] }
   })
 
-  return { lanes, commits: kept.sort((a, b) => a.at - b.at), stashes: recentStashes(stashes, lanes, kept, ctx.now), hidden, skipped }
+  return { lanes, commits: kept.sort((a, b) => order.get(b.hash)! - order.get(a.hash)!), stashes: recentStashes(stashes, lanes, kept, ctx.now), hidden, skipped }
+}
+
+/**
+ * A side branch whose tip already sits on another lane has no commit of its own: it gets no lane (an
+ * empty one drew a line from nowhere) and its name goes on that commit. Removes those lanes from
+ * `lanes`, renumbers the commits' lanes, and returns tip hash -> branch names.
+ */
+export function dropEmptyLanes(lanes: Lane[], commits: GraphCommit[]): Map<string, string[]> {
+  const refsOf = new Map<string, string[]>()
+  const drawn = lanes.filter((lane, i) => {
+    const isEmpty = !lane.isBase && !lane.isCurrent && !commits.some(c => c.lane === i)
+    if (isEmpty) refsOf.set(lane.tip, [...(refsOf.get(lane.tip) ?? []), lane.branch])
+    return !isEmpty
+  })
+  const newIndex = new Map(drawn.map((l, k) => [lanes.indexOf(l), k]))
+  for (const c of commits) if (c.lane !== -1) c.lane = newIndex.get(c.lane)!
+  lanes.splice(0, lanes.length, ...drawn)
+  return refsOf
 }
 
 /** Stashes from the last 7 days on a branch the graph draws: 101 old ones made a 130-row pane the app left blank. */

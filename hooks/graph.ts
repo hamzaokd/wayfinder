@@ -81,7 +81,11 @@ export function items(v: GraphView): { list: Item[]; lanes: Lane[]; current: num
   const list: Item[] = []
 
   const tipOf = new Map(lanes.map((l, i) => [i, commits.filter(c => c.lane === i).at(-1)?.hash]))
+  // Commits come in git's order, parents first; a commit dated before its parent (a rebase) is placed
+  // just after it, so the sort below keeps that order and no line runs back up.
+  let floor = -Infinity
   for (const c of commits) {
+    floor = Math.max(floor, c.at)
     const lane = lanes[c.lane]
     if (!lane) continue
     const owner = v.ownerOf.get(c.hash)
@@ -91,7 +95,7 @@ export function items(v: GraphView): { list: Item[]; lanes: Lane[]; current: num
     const isTip = tipOf.get(c.lane) === c.hash
     const isCompact = (phase !== undefined && closed.has(phase)) || (isSide && lane.relevance < 1 && !isTip && !tag)
     const label = isSide && isTip ? `${lane.branch} · ${lane.why}` : undefined
-    list.push({ kind: 'commit', t: c.at, o: 1, lane: c.lane, phase, c, tag, isOwn: own.has(c.hash), isCompact, label })
+    list.push({ kind: 'commit', t: floor, o: 1, lane: c.lane, phase, c, tag, isOwn: own.has(c.hash), isCompact, label })
   }
 
   for (const { s, index } of steps) {
@@ -179,13 +183,19 @@ export function stepTag(v: GraphView, s: Step): { text: string; isAlert: boolean
 }
 
 /** The text of a timeline row, drawn natively beside its slice of the lanes. `id` makes it clickable. */
-export type RowLabel = { text: string; tail?: string; color?: 'success' | 'suggestion' | 'error' | 'warning'; tailColor?: 'warning'; dim?: boolean; mono?: boolean; strike?: boolean; bold?: boolean; id?: string }
+/** `lead`: a commit's hash, drawn first in its branch's color (`leadColor`), so a commit names its branch. */
+export type RowLabel = { lead?: string; leadColor?: string; text: string; tail?: string; color?: 'success' | 'suggestion' | 'error' | 'warning' | `#${string}`; tailColor?: 'warning'; dim?: boolean; mono?: boolean; strike?: boolean; bold?: boolean; id?: string }
 
 export function rowLabel(v: GraphView, it: Item): RowLabel | undefined {
   if (it.kind === 'commit') {
     if (it.isCompact) return undefined
+    const refs = it.c.refs?.length ? ` · ${it.c.refs.join(', ')}` : ''
     const tail = it.tag && !it.label ? ` · ${it.tag} · ${ago(v.now - it.c.at)}` : it.isOwn || it.label ? ` · ${ago(v.now - it.c.at)}` : undefined
-    return { text: it.label ?? `${it.c.hash.slice(0, 7)} ${it.c.subject}`, tail, mono: !it.label, color: it.tag ? 'warning' : undefined, dim: !it.isOwn && !it.tag, id: rowKey(it) }
+    const lane = v.repo.graph?.lanes[it.lane]
+    const color = lane && laneColor(lane, it.lane)
+    // A branch's tip row names the branch, in its color; other commits lead with their hash in it.
+    if (it.label) return { text: it.label, tail, color: color as `#${string}`, dim: false, id: rowKey(it) }
+    return { lead: it.c.hash.slice(0, 7), leadColor: color, text: it.c.subject, tail: refs + (tail ?? '') || undefined, mono: true, color: it.tag ? 'warning' : undefined, dim: !it.isOwn && !it.tag, id: rowKey(it) }
   }
   if (it.kind === 'step') {
     const s = it.s
@@ -346,6 +356,9 @@ export function graphLanes(v: GraphView, seen?: ReadonlySet<string>): { width: n
 
   // Lane lines: each lane runs through its own rows; the current one goes on dashed past "now".
   const lines: Shape[] = []
+  // Where each lane's line runs, for merges that start from it.
+  const span = new Map<number, { y1: number; y2: number }>()
+  const TURN = 20
   lanes.forEach((l, i) => {
     const mineY = list.map((it, k) => (it.lane === i ? ys[k]! : undefined)).filter((n): n is number => n !== undefined)
     const x = laneX(i)
@@ -353,7 +366,14 @@ export function graphLanes(v: GraphView, seen?: ReadonlySet<string>): { width: n
     let y1 = mineY.length ? Math.min(...mineY) : 0
     const y2 = l.isBase ? lastY : mineY.length ? Math.max(...mineY) : 0
     const from = l.forkFrom ? at.get(l.forkFrom) : undefined
-    if (from && from.x !== x) {
+    if (from && from.x !== x && from.y < y1) {
+      // The branch leaves its fork point at once, then runs straight down its own lane: a curve that
+      // spanned every row in between crossed the whole graph.
+      const turn = Math.min(y1, from.y + TURN)
+      lines.push({ y1: from.y, y2: turn, svg: `<path d="M${from.x} ${from.y} C${from.x} ${from.y + TURN * 0.6}, ${x} ${turn - TURN * 0.6}, ${x} ${turn}" fill="none" stroke="${color}" stroke-width="2.5" opacity="${l.relevance}"/>` })
+      y1 = turn
+    } else if (from && from.x !== x) {
+      // Only when phases moved the rows: the fork point lies below the branch's first row.
       lines.push({ y1: Math.min(from.y, y1), y2: Math.max(from.y, y1), svg: `<path d="M${from.x} ${from.y} C${from.x} ${from.y + 14}, ${x} ${y1 - 14}, ${x} ${y1}" fill="none" stroke="${color}" stroke-width="2.5" opacity="${l.relevance}"/>` })
     } else if (l.isBase || l.isCurrent) {
       y1 = 0
@@ -361,6 +381,7 @@ export function graphLanes(v: GraphView, seen?: ReadonlySet<string>): { width: n
     const solidEnd = l.isCurrent || l.isBase ? Math.min(Math.max(nowY, y1), y2) : y2
     if (solidEnd > y1) lines.push({ y1, y2: solidEnd, svg: `<line x1="${x}" y1="${y1}" x2="${x}" y2="${solidEnd}" stroke="${color}" stroke-width="2.5" opacity="${l.relevance}"/>` })
     if (y2 > solidEnd) lines.push({ y1: solidEnd, y2, svg: `<line x1="${x}" y1="${solidEnd}" x2="${x}" y2="${y2}" class="rail-todo" opacity="${l.relevance}"/>` })
+    span.set(i, { y1, y2 })
   })
   // Merge commits: a curve from the second parent into the merge.
   for (const c of v.repo.graph?.commits ?? []) {
@@ -368,7 +389,14 @@ export function graphLanes(v: GraphView, seen?: ReadonlySet<string>): { width: n
     const from = c.parents[1] ? at.get(c.parents[1]) : undefined
     const p = v.repo.graph!.commits.find(x => x.hash === c.parents[1])?.lane
     const pl = p === undefined ? undefined : lanes[p]
-    if (to && from && pl && p !== undefined && from.x !== to.x) lines.push({ y1: Math.min(from.y, to.y), y2: Math.max(from.y, to.y), svg: `<path d="M${from.x} ${from.y} C${from.x} ${from.y + 14}, ${to.x} ${to.y - 14}, ${to.x} ${to.y}" fill="none" stroke="${laneColor(pl, p)}" stroke-width="2" opacity="${pl.relevance}"/>` })
+    if (!to || !from || !pl || p === undefined || from.x === to.x) continue
+    const stroke = `stroke="${laneColor(pl, p)}" stroke-width="2" opacity="${pl.relevance}"`
+    // The merged branch runs down its own lane and turns in just above the merge, as a fork turns out.
+    const turn = Math.max(from.y, to.y - TURN)
+    const lane = span.get(p)
+    if (to.y > from.y && lane && turn > lane.y2) lines.push({ y1: lane.y2, y2: turn, svg: `<line x1="${from.x}" y1="${lane.y2}" x2="${from.x}" y2="${turn}" ${stroke}/>` })
+    const y0 = to.y > from.y ? turn : from.y
+    lines.push({ y1: Math.min(y0, to.y), y2: Math.max(y0, to.y), svg: `<path d="M${from.x} ${y0} C${from.x} ${y0 + 14}, ${to.x} ${to.y - 14}, ${to.x} ${to.y}" fill="none" ${stroke}/>` })
   }
 
   // Lines first, so marks draw over them. Slices holding the whole drawing made a 140-row repo's pane
@@ -458,7 +486,7 @@ export function graphText(v: GraphView): TextLine[] {
     if (!l) continue
     const glyph = it.kind === 'step' ? stepGlyph(it.s) : { commit: '*', decision: '◇', stash: '▫', dirty: '◌', merge: '╰', phase: '' }[it.kind]
     const pad = it.kind === 'phase' || it.kind === 'merge' ? '' : '│ '.repeat(it.lane)
-    out.push({ text: `${pad}${glyph ? `${glyph} ` : ''}${l.text}${l.tail ?? ''}`, color: l.color ?? l.tailColor, dim: l.dim, id: l.id })
+    out.push({ text: `${pad}${glyph ? `${glyph} ` : ''}${l.lead ? `${l.lead} ` : ''}${l.text}${l.tail ?? ''}`, color: l.color ?? l.tailColor, dim: l.dim, id: l.id })
   }
   return out
 }

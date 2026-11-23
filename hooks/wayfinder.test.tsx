@@ -2,7 +2,7 @@ import type { On } from 'claude-code'
 import { expect, mock, test } from 'claude-code/testing'
 
 import type { RepoLive } from '../types'
-import { GIT, recentStashes } from './gitgraph'
+import { dropEmptyLanes, GIT, recentStashes } from './gitgraph'
 import { graphLanes, graphText, items } from './graph'
 import { applyCleared, applyPlan, attributeEdits, chatStatus, clearKey, dirsFromToolUse, emptyTrail, normPath, PROGRESS_TOOL, quoted, rebuildFromHistory, sharedFiles, sinceYouLeft, stepMenu, waitingOnYou } from './lib'
 import { langOf, setLang } from './i18n'
@@ -142,6 +142,38 @@ function live(over: Partial<RepoLive> = {}): RepoLive {
     ...over,
   }
 }
+
+test('a branch with no commit of its own gets no lane: its name goes on its tip commit', () => {
+  // fix/done's tip is b, already claimed by feature/x: no lane, and fix/line after it moves up one.
+  const lanes = [
+    { branch: 'main', relevance: 1, why: 'base', isBase: true, tip: H('m') },
+    { branch: 'feature/x', relevance: 1, why: 'current', isCurrent: true, tip: H('b') },
+    { branch: 'fix/done', relevance: 0.25, why: 'recent', tip: H('b') },
+    { branch: 'fix/line', relevance: 0.25, why: 'recent', tip: H('l') },
+  ]
+  const commits = [
+    { hash: H('m'), parents: [], at: 1, subject: 'release', lane: 0 },
+    { hash: H('b'), parents: [H('m')], at: 2, subject: 'add writer', lane: 1 },
+    { hash: H('l'), parents: [H('m')], at: 3, subject: 'fix line', lane: 3 },
+  ]
+  expect([...dropEmptyLanes(lanes, commits)]).toEqual([[H('b'), ['fix/done']]])
+  expect(lanes.map(l => l.branch)).toEqual(['main', 'feature/x', 'fix/line'])
+  expect(commits.map(c => c.lane)).toEqual([0, 1, 2])
+})
+
+test('commits keep git order over their dates; a commit leads with its hash in its branch color', () => {
+  const base = live()
+  // A rebased commit dated before its parent still comes after it.
+  const commits = [
+    { hash: H('0'), parents: [], at: 100, subject: 'release', lane: 0 },
+    { hash: H('b'), parents: [H('0')], at: 50, subject: 'rebased', lane: 1, refs: ['fix/done'] },
+  ]
+  const view = { trail: emptyTrail('s1', 0), repo: { ...base, dirty: 0, graph: { ...base.graph!, stashes: [], commits } }, isPrimary: true, expanded: {}, now: 500, ownerOf: new Map<string, string>() }
+  expect(items(view).list.flatMap(i => (i.kind === 'commit' ? [i.c.subject] : []))).toEqual(['release', 'rebased'])
+  const row = graphLanes(view).rows.find(r => r.label?.text === 'rebased')!
+  expect(row.label).toMatchObject({ lead: 'bbbbbbb', leadColor: '#639922' })
+  expect(row.label!.tail).toContain('fix/done')
+})
 
 test('the graph puts steps on their branch, folds finished phases, and plans the merge', () => {
   let t = applyPlan(emptyTrail('s1', 0), { phases: plan([['Investigate', 'Check perms', 'doing'], ['Build', 'Writer', 'todo'], ['Ship', 'PR', 'todo']]) }, ctx(50))
@@ -358,7 +390,9 @@ test('the pane: the graph, clicks on it, the dialog, and where actions go', { op
     const graph = async () => (await ui.findAll({ type: 'Text' })).map(x => x.text).join('\n')
     expect(await graph()).toContain('2.1 Benchmark on 1M rows')
     expect(await graph()).toContain(' · waiting on you')
-    expect(await graph()).toContain('bbbbbbb add writer')
+    // A commit leads with its hash; with lanes drawn, in its branch's color.
+    expect(await graph()).toMatch(/bbbbbbb \n?add writer/)
+    if (surface === 'desktop') expect((await ui.find({ type: 'Text', text: /^bbbbbbb $/ }))?.props.color).toBe('#639922')
 
     // A click on a row of the timeline: its text is a button, on every surface.
     const click = async (id: string) => {

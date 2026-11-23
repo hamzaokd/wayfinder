@@ -14,6 +14,7 @@
   .box { display: flex; min-width: 0; }
   .text { white-space: pre-wrap; min-width: 0; }
   .truncate { white-space: pre; overflow: hidden; text-overflow: ellipsis; }
+  .text .text { white-space: inherit; } /* an inline run follows its Text's wrapping */
   .button { cursor: pointer; display: inline-flex; min-width: 0; }
   .button.boxed { border: 1px solid var(--border); border-radius: 6px; padding: 2px 8px; }
   img { display: block; flex: none; }

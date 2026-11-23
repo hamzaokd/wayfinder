@@ -582,7 +582,9 @@ async function drawPane($: $, e: RenderInput) {
   const legend = showLegend && Svg ? legendSvg() : undefined
 
   const labelParts = (l: RowLabel) => [
+    // The hash runs inside the subject's Text, so the two truncate as one line and never overlap.
     <Text color={l.color} dimColor={l.dim} mono={l.mono} strikethrough={l.strike} weight={l.bold ? 'semibold' : undefined} wrap="truncate">
+      {l.lead && <Text color={l.leadColor} weight="semibold">{`${l.lead} `}</Text>}
       {l.text}
     </Text>,
     ...(l.tail ? [<Text color={l.tailColor} dimColor={!l.tailColor} wrap="truncate">{l.tail}</Text>] : []),
@@ -622,7 +624,7 @@ async function drawPane($: $, e: RenderInput) {
       <Box key={`row-${r.name}-${row.key}`} flexDirection="row" alignItems="center">
         {Svg && <Svg source={g.slice(row)} alt={l?.text ?? 'commit'} width={g.width} height={row.height} />}
         {l && id ? (
-          <Button key={`press-${r.name}-${row.key}`} label={l.text} plain hover={{ underline: true }} onPress={() => void openRow($, id)}>
+          <Button key={`press-${r.name}-${row.key}`} label={l.lead ? `${l.lead} ${l.text}` : l.text} plain hover={{ underline: true }} onPress={() => void openRow($, id)}>
             {labelParts(l)}
           </Button>
         ) : (
