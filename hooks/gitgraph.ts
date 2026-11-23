@@ -190,5 +190,12 @@ export async function repoGraph($: $, live: RepoLive, ctx: GraphCtx): Promise<Re
     return { name, subject, at: Number(at) * 1000, parent: parents.split(' ')[0] ?? '', branch: /^(?:WIP on|On) ([^:]+):/.exec(subject)?.[1] }
   })
 
-  return { lanes, commits: kept.sort((a, b) => a.at - b.at), stashes, hidden, skipped }
+  return { lanes, commits: kept.sort((a, b) => a.at - b.at), stashes: recentStashes(stashes, lanes, kept, ctx.now), hidden, skipped }
+}
+
+/** Stashes from the last 7 days on a branch the graph draws: 101 old ones made a 130-row pane the app left blank. */
+export function recentStashes(stashes: readonly Stash[], lanes: readonly Lane[], kept: readonly GraphCommit[], now: number): Stash[] {
+  const branches = new Set(lanes.map(l => l.branch.replace(/^origin\//, '')))
+  const hashes = new Set(kept.map(c => c.hash))
+  return stashes.filter(s => now - s.at <= RECENT_MS && ((s.branch !== undefined && branches.has(s.branch)) || hashes.has(s.parent)))
 }

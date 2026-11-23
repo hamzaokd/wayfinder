@@ -2,7 +2,7 @@ import type { On } from 'claude-code'
 import { expect, mock, test } from 'claude-code/testing'
 
 import type { RepoLive } from '../types'
-import { GIT } from './gitgraph'
+import { GIT, recentStashes } from './gitgraph'
 import { graphLanes, graphText, items } from './graph'
 import { applyCleared, applyPlan, attributeEdits, chatStatus, clearKey, dirsFromToolUse, emptyTrail, normPath, PROGRESS_TOOL, quoted, rebuildFromHistory, sharedFiles, sinceYouLeft, stepMenu, waitingOnYou } from './lib'
 import { langOf, setLang } from './i18n'
@@ -243,6 +243,15 @@ function fakeGit(on: On, repo: { head: string; log: string }) {
     return fail
   })
 }
+
+test('only recent stashes on a drawn branch', () => {
+  const day = 86_400_000
+  const now = 30 * day
+  const lanes = [{ branch: 'origin/main', relevance: 1, why: 'base', isBase: true, tip: H('m') }, { branch: 'feature/x', relevance: 1, why: 'current', isCurrent: true, tip: H('a') }]
+  const st = (name: string, branch: string | undefined, ageDays: number, parent = H('z')) => ({ name, subject: `WIP on ${branch}: x`, at: now - ageDays * day, parent, branch })
+  const all = [st('fresh', 'feature/x', 1), st('base', 'main', 2), st('old', 'feature/x', 9), st('other', 'fix/y', 1), st('onCommit', undefined, 1, H('a'))]
+  expect(recentStashes(all, lanes, [{ hash: H('a'), parents: [], at: 0, subject: '', lane: 1 }], now).map(s => s.name)).toEqual(['fresh', 'base', 'onCommit'])
+})
 
 test('the pane: the graph, clicks on it, the dialog, and where actions go', { options: { autoStart: false } }, async ($, on) => {
   const repo = { head: H('a'), log: '' }
