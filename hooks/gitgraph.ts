@@ -165,18 +165,7 @@ export async function repoGraph($: $, live: RepoLive, ctx: GraphCtx): Promise<Re
   claimLanes(lanes, all)
   const refsOf = dropEmptyLanes(lanes, all)
 
-  // Keep the graph short: the newest commits of each lane, plus every fork point and named commit.
-  const forkPoints = new Set([...lanes.map(l => l.forkFrom).filter(Boolean), ...refsOf.keys()])
-  const kept: GraphCommit[] = []
-  let skipped = 0
-  lanes.forEach((lane, i) => {
-    const mine = all.filter(c => c.lane === i)
-    const limit = lane.isBase ? BASE_KEEP : lane.relevance < 1 ? SIDE_KEEP : MAX_PER_LANE
-    mine.forEach((c, k) => {
-      if (k < limit || forkPoints.has(c.hash)) kept.push(refsOf.has(c.hash) ? { ...c, refs: refsOf.get(c.hash) } : c)
-      else skipped += 1
-    })
-  })
+  const { kept, skipped } = keepCommits(lanes, all, refsOf)
 
   // Oldest first in git's own order (--date-order: never a parent after its child), not by date: a
   // rebased commit's date can be older than its parent's, which drew lines running back up.
@@ -189,6 +178,23 @@ export async function repoGraph($: $, live: RepoLive, ctx: GraphCtx): Promise<Re
   })
 
   return { lanes, commits: kept.sort((a, b) => order.get(b.hash)! - order.get(a.hash)!), stashes: recentStashes(stashes, lanes, kept, ctx.now), hidden, skipped }
+}
+
+/**
+ * Keeps the graph short: each lane's newest commits, plus every fork point, every named commit, and
+ * every merge whose merged-in commit stays (cutting one cut the line between two branches).
+ */
+export function keepCommits(lanes: readonly Lane[], all: readonly GraphCommit[], refsOf: ReadonlyMap<string, string[]>): { kept: GraphCommit[]; skipped: number } {
+  const forkPoints = new Set([...lanes.map(l => l.forkFrom).filter(Boolean), ...refsOf.keys()])
+  const isKept = new Set<string>()
+  const rest: GraphCommit[] = []
+  lanes.forEach((lane, i) => {
+    const limit = lane.isBase ? BASE_KEEP : lane.relevance < 1 ? SIDE_KEEP : MAX_PER_LANE
+    all.filter(c => c.lane === i).forEach((c, k) => (k < limit || forkPoints.has(c.hash) ? isKept.add(c.hash) : rest.push(c)))
+  })
+  for (const c of rest) if (c.parents[1] && isKept.has(c.parents[1])) isKept.add(c.hash)
+  const kept = all.filter(c => isKept.has(c.hash)).map(c => (refsOf.has(c.hash) ? { ...c, refs: refsOf.get(c.hash) } : c))
+  return { kept, skipped: all.filter(c => c.lane !== -1).length - kept.length }
 }
 
 /**

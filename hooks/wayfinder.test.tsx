@@ -2,7 +2,7 @@ import type { On } from 'claude-code'
 import { expect, mock, test } from 'claude-code/testing'
 
 import type { Lane, RepoLive, Trail } from '../types'
-import { claimLanes, dropEmptyLanes, GIT, recentStashes } from './gitgraph'
+import { claimLanes, dropEmptyLanes, GIT, keepCommits, recentStashes } from './gitgraph'
 import { graphLanes, graphText, items } from './graph'
 import { applyCleared, applyPlan, taskListPlan, attributeEdits, chatStatus, clearKey, dirsFromToolUse, emptyTrail, normPath, PROGRESS_TOOL, quoted, rebuildFromHistory, sharedFiles, sinceYouLeft, stepMenu, waitingOnYou } from './lib'
 import { langOf, setLang } from './i18n'
@@ -176,6 +176,24 @@ test('a branch only behind another is a name on its commit, not a lane that seem
   expect(lanes.map(l => `${l.branch}${l.forkFrom ? `<${l.forkFrom[0]}` : ''}`)).toEqual(['develop', 'library<1'])
   expect(commits.map(x => `${x.subject}@${x.lane}`)).toEqual(['d@0', 'l@1', '2@0', 'a@1', '1@0'])
   expect([...refs]).toEqual([[H('2'), ['origin/master']], [H('a'), ['analytics']]])
+})
+
+test('cutting a branch to its newest commits keeps what joins it to the others', () => {
+  // A side branch (4 kept) with 6 commits; its oldest, a merge from main's m, would be cut.
+  const lanes: Lane[] = [
+    { branch: 'main', relevance: 1, why: 'current', isCurrent: true, tip: H('m') },
+    { branch: 'side', relevance: 0.25, why: 'recent', tip: H('6') },
+  ]
+  const c = (h: string, parents: string[], lane: number) => ({ hash: H(h), parents: parents.map(H), at: 0, subject: h, lane })
+  const all = [c('6', ['5'], 1), c('5', ['4'], 1), c('4', ['3'], 1), c('3', ['2'], 1), c('2', ['1'], 1), c('1', ['0', 'm'], 1), c('m', [], 0)]
+  const { kept, skipped } = keepCommits(lanes, all, new Map())
+  expect(kept.map(x => x.subject)).toEqual(['6', '5', '4', '3', '1', 'm'])
+  expect(skipped).toBe(1)
+  // Drawn, the side lane's line comes from the top: its history goes on above what is shown.
+  const base = live()
+  const view = { trail: emptyTrail('s1', 0), repo: { ...base, branch: 'main', dirty: 0, graph: { ...base.graph!, lanes, stashes: [], commits: [...kept].reverse() } }, isPrimary: true, expanded: {}, now: 1, ownerOf: new Map<string, string>() }
+  const g = graphLanes(view)
+  expect(g.slice(g.rows[0]!)).toContain('<line x1="34" y1="0"')
 })
 
 test('commits keep git order over their dates; a commit leads with its hash in its branch color, then its names', () => {

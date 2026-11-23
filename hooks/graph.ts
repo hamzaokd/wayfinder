@@ -373,6 +373,11 @@ export function graphLanes(v: GraphView, seen?: ReadonlySet<string>): { width: n
   // Where each lane's line runs, for merges that start from it.
   const span = new Map<number, { y1: number; y2: number }>()
   const TURN = 20
+  // A lane whose oldest drawn commit has a parent left out (older, or past the log's reach).
+  const continuesAbove = (i: number) => {
+    const oldest = v.repo.graph?.commits.find(c => c.lane === i)
+    return !!oldest?.parents[0] && !at.has(oldest.parents[0])
+  }
   lanes.forEach((l, i) => {
     const mineY = list.map((it, k) => (it.lane === i ? ys[k]! : undefined)).filter((n): n is number => n !== undefined)
     const x = laneX(i)
@@ -389,7 +394,8 @@ export function graphLanes(v: GraphView, seen?: ReadonlySet<string>): { width: n
     } else if (from && from.x !== x) {
       // Only when phases moved the rows: the fork point lies below the branch's first row.
       lines.push({ y1: Math.min(from.y, y1), y2: Math.max(from.y, y1), svg: `<path d="M${from.x} ${from.y} C${from.x} ${from.y + 14}, ${x} ${y1 - 14}, ${x} ${y1}" fill="none" stroke="${color}" stroke-width="2.5" opacity="${l.relevance}"/>` })
-    } else if (l.isBase || l.isCurrent) {
+    } else if (l.isBase || l.isCurrent || continuesAbove(i)) {
+      // Its history goes on above what is shown: the line comes from the top, not from nowhere.
       y1 = 0
     }
     const solidEnd = l.isCurrent || l.isBase ? Math.min(Math.max(nowY, y1), y2) : y2
