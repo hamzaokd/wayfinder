@@ -124,7 +124,7 @@ declare module 'claude-code' {
       cleared: Shaped<Record<string, number>>
       aside: Shaped<{ title: string; text?: string; isLoading: boolean } | null>
       lang: Shaped<'en' | 'fr'>
-      settings: Shaped<{ autoStart: boolean; othersDays: number; maxOthers: number; commitDates: boolean }>
+      settings: Shaped<{ autoStart: boolean; othersDays: number; maxOthers: number; commitDates: boolean; maxCommits: number }>
     }
   }
 }

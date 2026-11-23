@@ -52,8 +52,8 @@ const aside = atom({ plugin: 'wayfinder', key: 'aside' } as const, null, { shape
 // The pane's language; the pane reads it, so a change redraws it.
 const langNow = atom({ plugin: 'wayfinder', key: 'lang' } as const, 'en', { shape: 'lang-1' })
 // The plugin's own settings (manifest userConfig): read at load, changed from the pane's Settings block.
-const settings = atom({ plugin: 'wayfinder', key: 'settings' } as const, { autoStart: true, othersDays: 7, maxOthers: 8, commitDates: true }, { shape: 'settings-2' })
-type Settings = { autoStart: boolean; othersDays: number; maxOthers: number; commitDates: boolean }
+const settings = atom({ plugin: 'wayfinder', key: 'settings' } as const, { autoStart: true, othersDays: 7, maxOthers: 8, commitDates: true, maxCommits: 30 }, { shape: 'settings-3' })
+type Settings = { autoStart: boolean; othersDays: number; maxOthers: number; commitDates: boolean; maxCommits: number }
 const SETTINGS_KEY = '__settings'
 // Shared by every session: /wayfinder-lang's choice, and the other sessions /wayfinder-forget hid (id -> its updatedAt then).
 const LANG_KEY = 'lang'
@@ -147,7 +147,7 @@ const DESC_TOKENS = tok(DESCRIPTION + JSON.stringify(INPUT_SCHEMA))
 const kTok = (k: number) => (k < 1000 ? String(k) : `${(k / 1000).toFixed(1)}k`)
 
 // Read once at load: the engine passes the manifest's userConfig values, defaults filled in.
-let options: Settings = { autoStart: true, othersDays: 7, maxOthers: 8, commitDates: true }
+let options: Settings = { autoStart: true, othersDays: 7, maxOthers: 8, commitDates: true, maxCommits: 30 }
 
 /** Wayfinder is off in a session until /wayfinder, except in one that already has a plan, or when autoStart is set. */
 function isOn(t: Trail | null | undefined, autoStart: boolean): boolean {
@@ -211,7 +211,7 @@ async function syncNow($: $, origin: 'session' | 'outside'): Promise<void> {
         const b = o.seen[live.root]?.branch
         if (b) otherBranches.set(b, o.goal ?? 'another session')
       }
-      const graph = await repoGraph($, live, { now, sessionBranches: Object.keys(t.seen[live.root]?.heads ?? {}), otherBranches })
+      const graph = await repoGraph($, live, { now, sessionBranches: Object.keys(t.seen[live.root]?.heads ?? {}), otherBranches, maxCommits: (await read($, settings)).maxCommits })
       return { ...live, graph }
     }),
   )
@@ -520,6 +520,8 @@ async function setOption<K extends keyof Settings>($: $, field: K, value: Settin
   // shortcut: other open sessions read the new value at their next load (/reload-plugins); watch config.set if that grates.
   await update($, settings, cur => ({ ...cur, [field]: value }))
   if (field === 'othersDays') await refreshOthers($)
+  // The graph is rebuilt from git: now, not at the next refresh.
+  if (field === 'maxCommits') void tick($)
 }
 
 async function dismissAway($: $): Promise<void> {
@@ -573,11 +575,11 @@ async function drawPane($: $, e: RenderInput) {
   const showOthers = open[OTHERS_KEY] ?? false
   const showLegend = open[LEGEND_KEY] ?? false
   const showSettings = open[SETTINGS_KEY] ?? false
-  const stepper = (key: string, label: string, value: number, min: number, max: number, field: 'othersDays' | 'maxOthers') => (
+  const stepper = (key: string, label: string, value: number, min: number, max: number, field: 'othersDays' | 'maxOthers' | 'maxCommits', step = 1) => (
     <Box flexDirection="row" gap={1}>
       <Text dimColor>{label}</Text>
-      <Button key={`${key}-less`} variant="secondary" label="−" onPress={() => void setOption($, field, Math.max(min, value - 1))} />
-      <Button key={`${key}-more`} variant="secondary" label="+" onPress={() => void setOption($, field, Math.min(max, value + 1))} />
+      <Button key={`${key}-less`} variant="secondary" label="−" onPress={() => void setOption($, field, Math.max(min, value - step))} />
+      <Button key={`${key}-more`} variant="secondary" label="+" onPress={() => void setOption($, field, Math.min(max, value + step))} />
     </Box>
   )
   const legend = showLegend && Svg ? legendSvg() : undefined
@@ -876,6 +878,7 @@ async function drawPane($: $, e: RenderInput) {
             </Box>
             {stepper('set-days', T.setDays(set.othersDays), set.othersDays, 1, 60, 'othersDays')}
             {stepper('set-max', T.setMax(set.maxOthers), set.maxOthers, 1, 30, 'maxOthers')}
+            {stepper('set-commits', T.setMaxCommits(set.maxCommits), set.maxCommits, 5, 100, 'maxCommits', 5)}
             <Text dimColor size="caption">{T.setNote}</Text>
           </Box>
         )}
@@ -890,7 +893,7 @@ async function drawPane($: $, e: RenderInput) {
 
 export const register: Register = (on, opts: PluginOptions) => {
   // Validated against the manifest's types before the module loads.
-  options = { autoStart: opts.autoStart !== false, othersDays: Number(opts.othersDays), maxOthers: Number(opts.maxOthers), commitDates: opts.commitDates !== false }
+  options = { autoStart: opts.autoStart !== false, othersDays: Number(opts.othersDays), maxOthers: Number(opts.maxOthers), commitDates: opts.commitDates !== false, maxCommits: Number(opts.maxCommits) }
 
   on('session.start', async ($, e, next) => {
     const started = await next(e)
