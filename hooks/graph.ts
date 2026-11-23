@@ -14,6 +14,8 @@ export type GraphView = {
   now: number
   /** Commit hash -> the goal of the other session that made it. */
   ownerOf: ReadonlyMap<string, string>
+  /** False: no "4d ago" beside commits (the commitDates setting). */
+  showCommitDates?: boolean
 }
 
 export type PhaseState = 'done' | 'current' | 'future'
@@ -198,7 +200,8 @@ export function rowLabel(v: GraphView, it: Item): RowLabel | undefined {
     if (it.isCompact) return undefined
     // Branch names right after the hash, as git log --decorate puts them: at the end they were cut off.
     const refs = it.c.refs?.length ? `(${it.c.refs.join(', ')}) ` : ''
-    const tail = it.tag && !it.label ? ` · ${it.tag} · ${ago(v.now - it.c.at)}` : it.isOwn || it.label ? ` · ${ago(v.now - it.c.at)}` : undefined
+    const age = v.showCommitDates === false ? '' : ` · ${ago(v.now - it.c.at)}`
+    const tail = (it.tag && !it.label ? ` · ${it.tag}${age}` : it.isOwn || it.label ? age : '') || undefined
     const lane = v.repo.graph?.lanes[it.lane]
     const color = lane && laneColor(lane, it.lane)
     // A branch's tip row names the branch, in its color; other commits lead with their hash in it.

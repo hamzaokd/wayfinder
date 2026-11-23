@@ -1,10 +1,10 @@
 import type { On } from 'claude-code'
 import { expect, mock, test } from 'claude-code/testing'
 
-import type { Lane, RepoLive } from '../types'
+import type { Lane, RepoLive, Trail } from '../types'
 import { claimLanes, dropEmptyLanes, GIT, recentStashes } from './gitgraph'
 import { graphLanes, graphText, items } from './graph'
-import { applyCleared, applyPlan, attributeEdits, chatStatus, clearKey, dirsFromToolUse, emptyTrail, normPath, PROGRESS_TOOL, quoted, rebuildFromHistory, sharedFiles, sinceYouLeft, stepMenu, waitingOnYou } from './lib'
+import { applyCleared, applyPlan, taskListPlan, attributeEdits, chatStatus, clearKey, dirsFromToolUse, emptyTrail, normPath, PROGRESS_TOOL, quoted, rebuildFromHistory, sharedFiles, sinceYouLeft, stepMenu, waitingOnYou } from './lib'
 import { langOf, setLang } from './i18n'
 
 const PANE = {
@@ -222,6 +222,9 @@ test('the graph puts steps on their branch, folds finished phases, and plans the
   // Each row knows its phase and how far along it is: the pane draws a block per phase.
   expect(g.rows.filter(r => r.label?.id?.startsWith('phase:')).map(r => `${r.phase}:${r.state}`)).toEqual(['Investigate:done', 'Build:current', 'Ship:future'])
   expect(shown.some(x => x.startsWith('fix/login · also edits auth.ts'))).toBe(true)
+  // The commitDates setting off: no age beside any commit.
+  expect(g.rows.map(r => r.label?.tail)).not.toContain(' · outside')
+  expect(graphLanes({ ...view, showCommitDates: false }).rows.map(r => r.label?.tail)).toContain(' · outside')
   // Phases, steps and labelled commits are clickable (the folded phase's commit is a bare dot).
   expect(g.rows.flatMap(r => r.label?.id ?? [])).toEqual(['phase:Investigate', 'phase:Build', 'step:Writer', 'commit:' + H('b'), 'commit:' + H('l'), 'commit:' + H('m'), 'phase:Ship', 'step:PR'])
   // Each row shows its own band of one drawing, and the bands tile it with no gap.
@@ -578,6 +581,59 @@ test('the strip above the prompt: most pressing state first, off plan when the p
   expect(chatStatus({ ...t, turn: t.turn + 6 })?.kind).toBe('stuck')
   t = applyPlan(t, { phases: plan([['P', 'A', 'done'], ['P', 'X', 'done'], ['P', 'B', 'done']]) }, ctx(5))
   expect(chatStatus(t)).toEqual({ kind: 'achieved', detail: 'G' })
+})
+
+test('a task list becomes plan input: one phase per list, moves by advance, done and start', () => {
+  const mirror = (t: Trail, tool: string, args: Record<string, unknown>) => ({ ...applyPlan(t, taskListPlan(t, tool, args)!, { ...ctx(1), isMirror: true }), planFrom: 'tasks' as const })
+  const titles = (t: Trail) => t.steps.map(s => `${s.phase}/${s.title}:${s.status}`)
+  let t = mirror(emptyTrail('s1', 0), 'TodoWrite', { todos: [{ content: 'Read', status: 'in_progress', activeForm: 'Reading' }, { content: 'Run tests', status: 'pending' }] })
+  expect(titles(t)).toEqual(['Request 1/Read:doing', 'Request 1/Run tests:todo'])
+  t = mirror(t, 'mcp__ccd_turn__update_plan', { done: [1], start: 2 })
+  expect(titles(t)).toEqual(['Request 1/Read:done', 'Request 1/Run tests:doing'])
+  // A revision keeps what it left out that was done.
+  t = mirror(t, 'mcp__ccd_turn__update_plan', { items: [{ content: 'Run tests', status: 'completed' }], scope: 'continuation' })
+  expect(titles(t)).toEqual(['Request 1/Read:done', 'Request 1/Run tests:done'])
+  // A list sharing no step starts the next request; what the last one left open is dropped; a reused title is kept apart.
+  t = mirror(t, 'TodoWrite', { todos: [{ content: 'Deploy', status: 'in_progress' }] })
+  t = mirror(t, 'TodoWrite', { todos: [{ content: 'Run tests', status: 'pending' }] })
+  expect(titles(t)).toEqual(['Request 1/Read:done', 'Request 1/Run tests:done', 'Request 2/Deploy:dropped', 'Request 3/Run tests (3):todo'])
+  // Mirrored changes are not drift: nothing marks the plan off course.
+  expect(t.events.filter(e => e.kind === 'drift')).toEqual([])
+  expect(taskListPlan(emptyTrail('s1', 0), 'mcp__ccd_turn__update_plan', { advance: true })).toBeUndefined()
+})
+
+test('the task list Claude keeps is the plan until Claude records its own', { options: { autoStart: true } }, async ($, on) => {
+  mock.store(on)
+  mock.clock(on, { now: 1_000_000 })
+  fakeGit(on, { head: H('a'), log: '' })
+  on('session.id', () => ({ value: 'tasks-1' }))
+  on('env.get', () => ({ value: undefined }))
+  on('session.messages', () => ({ value: [] }))
+  on('tool.register', () => ({ value: { tool: PROGRESS_TOOL } }))
+  on('command.register', (_, e) => ({ value: { command: e.name } }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('ui.status', () => ({ value: undefined }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  // The app's own tools, answered as the app would.
+  on('tool.call', { tool: /^mcp__ccd_turn__/ }, () => ({ result: 'ok' }) as never)
+  await $.session.start({ cwd: 'C:/r', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  const pane = async () => (await ui.findAll({ type: 'Text' })).map(x => x.text).join('\n')
+  await $.tool.call({ tool: 'mcp__ccd_turn__update_plan', items: [{ content: 'Pull', status: 'in_progress' }, { content: 'Fix it', status: 'pending' }], scope: 'first_task' } as never)
+  expect(await pane()).toContain('1.1 Pull')
+  await $.tool.call({ tool: 'mcp__ccd_turn__update_plan', advance: true } as never)
+  await $.tool.call({ tool: 'mcp__ccd_turn__wrap_up', recap: 'Fixed and pushed.' } as never)
+  expect(await pane()).toContain('Fixed and pushed.')
+  expect(await pane()).toContain('Task list')
+  expect(await pane()).toContain(' · 2 steps done')
+  // Claude's own plan replaces the mirror whole, with no reason asked for the steps it leaves out.
+  const own = await $.tool.call({ tool: PROGRESS_TOOL, goal: 'Ship it', phases: plan([['Build', 'Writer', 'doing']]) })
+  expect('deny' in own).toBe(false)
+  expect(await pane()).not.toContain('Request 1')
+  // From then on a task list leaves the plan alone.
+  await $.tool.call({ tool: 'mcp__ccd_turn__update_plan', items: [{ content: 'Other', status: 'in_progress' }], scope: 'continuation' } as never)
+  expect(await pane()).not.toContain('Other')
+  await ui.unmount()
 })
 
 test('the goal says it is achieved once every step is done', { options: { autoStart: true } }, async ($, on) => {

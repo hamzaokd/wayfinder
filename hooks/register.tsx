@@ -27,6 +27,7 @@ import {
   sinceYouLeft,
   stepMenu,
   stepNo,
+  taskListPlan,
   sharedFiles,
   waitingOnYou,
 } from './lib'
@@ -51,8 +52,8 @@ const aside = atom({ plugin: 'wayfinder', key: 'aside' } as const, null, { shape
 // The pane's language; the pane reads it, so a change redraws it.
 const langNow = atom({ plugin: 'wayfinder', key: 'lang' } as const, 'en', { shape: 'lang-1' })
 // The plugin's own settings (manifest userConfig): read at load, changed from the pane's Settings block.
-const settings = atom({ plugin: 'wayfinder', key: 'settings' } as const, { autoStart: true, othersDays: 7, maxOthers: 8 }, { shape: 'settings-1' })
-type Settings = { autoStart: boolean; othersDays: number; maxOthers: number }
+const settings = atom({ plugin: 'wayfinder', key: 'settings' } as const, { autoStart: true, othersDays: 7, maxOthers: 8, commitDates: true }, { shape: 'settings-2' })
+type Settings = { autoStart: boolean; othersDays: number; maxOthers: number; commitDates: boolean }
 const SETTINGS_KEY = '__settings'
 // Shared by every session: /wayfinder-lang's choice, and the other sessions /wayfinder-forget hid (id -> its updatedAt then).
 const LANG_KEY = 'lang'
@@ -146,7 +147,7 @@ const DESC_TOKENS = tok(DESCRIPTION + JSON.stringify(INPUT_SCHEMA))
 const kTok = (k: number) => (k < 1000 ? String(k) : `${(k / 1000).toFixed(1)}k`)
 
 // Read once at load: the engine passes the manifest's userConfig values, defaults filled in.
-let options: Settings = { autoStart: true, othersDays: 7, maxOthers: 8 }
+let options: Settings = { autoStart: true, othersDays: 7, maxOthers: 8, commitDates: true }
 
 /** Wayfinder is off in a session until /wayfinder, except in one that already has a plan, or when autoStart is set. */
 function isOn(t: Trail | null | undefined, autoStart: boolean): boolean {
@@ -589,7 +590,7 @@ async function drawPane($: $, e: RenderInput) {
   ]
 
   const graphOf = (r: RepoLive) => {
-    const view: GraphView = { trail: t, repo: r, isPrimary: r.root === primary, expanded: open, now, ownerOf }
+    const view: GraphView = { trail: t, repo: r, isPrimary: r.root === primary, expanded: open, now, ownerOf, showCommitDates: set.commitDates }
     if (Svg) {
       // Each row: its slice of the lane drawing, then its text. Clicks on an Svg never reach a mod; the text takes them.
       const g = graphLanes(view, drawnRows.get(r.root))
@@ -758,7 +759,7 @@ async function drawPane($: $, e: RenderInput) {
           </Text>
         )}
         <Text size="heading" weight="semibold" color={isAchieved ? 'success' : undefined}>
-          {t.goal ?? T.noPlan}
+          {t.goal ?? (t.planFrom === 'tasks' ? T.taskList : T.noPlan)}
         </Text>
         {t.whereWasI && (
           <Text dimColor>
@@ -766,7 +767,7 @@ async function drawPane($: $, e: RenderInput) {
             {t.whereWasI}
           </Text>
         )}
-        {!t.goal && <Text dimColor>{T.planHint}</Text>}
+        {!t.goal && t.planFrom !== 'tasks' && <Text dimColor>{T.planHint}</Text>}
         {isStale && (
           <Text color="warning">
             <Text weight="semibold">{T.planBehind}</Text>
@@ -866,6 +867,10 @@ async function drawPane($: $, e: RenderInput) {
               <Text dimColor>{T.setAutoStart}</Text>
               <Button key="set-autostart" variant="secondary" label={set.autoStart ? T.yes : T.no} onPress={() => void setOption($, 'autoStart', !set.autoStart)} />
             </Box>
+            <Box flexDirection="row" gap={1}>
+              <Text dimColor>{T.setCommitDates}</Text>
+              <Button key="set-commit-dates" variant="secondary" label={set.commitDates ? T.yes : T.no} onPress={() => void setOption($, 'commitDates', !set.commitDates)} />
+            </Box>
             {stepper('set-days', T.setDays(set.othersDays), set.othersDays, 1, 60, 'othersDays')}
             {stepper('set-max', T.setMax(set.maxOthers), set.maxOthers, 1, 30, 'maxOthers')}
             <Text dimColor size="caption">{T.setNote}</Text>
@@ -882,7 +887,7 @@ async function drawPane($: $, e: RenderInput) {
 
 export const register: Register = (on, opts: PluginOptions) => {
   // Validated against the manifest's types before the module loads.
-  options = { autoStart: opts.autoStart !== false, othersDays: Number(opts.othersDays), maxOthers: Number(opts.maxOthers) }
+  options = { autoStart: opts.autoStart !== false, othersDays: Number(opts.othersDays), maxOthers: Number(opts.maxOthers), commitDates: opts.commitDates !== false }
 
   on('session.start', async ($, e, next) => {
     const started = await next(e)
@@ -971,10 +976,12 @@ export const register: Register = (on, opts: PluginOptions) => {
     if (!(await active($))) return { deny: 'Wayfinder is off in this session; the user turns it on with /wayfinder. Carry on without it.' }
     const ctx = await planCtx($)
     const input = e as unknown as PlanInput
+    // Claude's own plan replaces a mirrored task list whole: its steps were never this plan's to drop.
+    const own = (t: Trail): Trail => (t.planFrom === 'tasks' ? { ...t, phases: [], steps: [], planVersion: 0, planFrom: undefined } : t)
     try {
       // Validate before saving: a bad call must not wipe the plan.
       const t = await read($, trail)
-      if (t) applyPlan(t, input, ctx)
+      if (t) applyPlan(own(t), input, ctx)
     } catch (err) {
       const deny = `Plan not saved: ${(err as Error).message}`
       await save($, t => ({ ...t, cost: { ...(t.cost ?? NO_COST), plan: (t.cost ?? NO_COST).plan + tok(JSON.stringify(e) + deny) } }))
@@ -982,8 +989,26 @@ export const register: Register = (on, opts: PluginOptions) => {
     }
     const result = 'Plan saved. The user sees it in the Wayfinder pane.'
     // What Claude wrote for the call, and the answer it read.
-    await save($, t => ({ ...applyPlan(t, input, ctx), cost: { ...(t.cost ?? NO_COST), plan: (t.cost ?? NO_COST).plan + tok(JSON.stringify(e) + result) } }))
+    await save($, t => ({ ...applyPlan(own(t), input, ctx), cost: { ...(t.cost ?? NO_COST), plan: (t.cost ?? NO_COST).plan + tok(JSON.stringify(e) + result) } }))
     return { result }
+  })
+
+  // The task list Claude keeps anyway is the plan until Claude records one: a once-only note asking for a
+  // second plan lost to the app's own plan tool, and sessions went without steps. Costs no tokens.
+  on('tool.call', { tool: /^(mcp__ccd_turn__update_plan|mcp__ccd_turn__wrap_up|TodoWrite)$/ }, async ($, e, next) => {
+    const res = await next(e)
+    if (e.agentId !== undefined || 'deny' in res || res.isError || !(await active($))) return res
+    const t = await read($, trail)
+    if (!t || (t.steps.length > 0 && t.planFrom !== 'tasks')) return res
+    const ctx = { ...(await planCtx($)), isMirror: true }
+    try {
+      const input = taskListPlan(t, e.tool, e as unknown as Record<string, unknown>)
+      if (input) await save($, cur => ({ ...applyPlan(cur, input, ctx), planFrom: 'tasks' }))
+    } catch (err) {
+      // The tool's own answer stands either way; the pane just misses this list.
+      note(`task list not mirrored: ${String(err).slice(0, 200)}`)
+    }
+    return res
   })
 
   on('prompt.submit', async ($, e, next) => {
@@ -1004,7 +1029,7 @@ export const register: Register = (on, opts: PluginOptions) => {
       lines.push(`Your plan has step(s) waiting on the user: ${waits.map(s => quoted(s.title)).join(', ')}. If this message settles one (an answer, done, or not wanted), call ${PROGRESS_TOOL} in this turn.`)
     } else if (t.steps.length === 0 && !hasNudged) {
       // From the first message: that is when Claude picks how to plan, often with the app's own plan tool instead.
-      lines.push(`No plan is recorded for this session yet. If this work has several steps, record it with ${PROGRESS_TOOL} before starting, even if you also use another plan or todo tool: only ${PROGRESS_TOOL} shows in the Wayfinder pane.`)
+      lines.push(`No plan is recorded for this session yet. The Wayfinder pane shows your task list (update_plan or TodoWrite) as the plan. For phases, decisions or steps waiting on the user, record the plan with ${PROGRESS_TOOL} instead.`)
       hasNudged = true
     }
     // Files another session edits too: said once per session and file, so Claude checks before editing.

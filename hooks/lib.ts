@@ -110,7 +110,8 @@ export function pushEvents(trail: Trail, events: readonly TrailEvent[]): Trail {
 }
 
 export type PlanInput = { goal?: unknown; whereWasI?: unknown; phases?: unknown; change?: unknown; decisions?: unknown }
-export type PlanCtx = { now: number; repo?: string; branch?: string }
+/** `isMirror`: the input mirrors Claude's own task list (taskListPlan): no drift, no reason asked. */
+export type PlanCtx = { now: number; repo?: string; branch?: string; isMirror?: boolean }
 
 const str = (v: unknown, name: string, max: number): string | undefined => {
   if (v === undefined || v === null) return undefined
@@ -171,7 +172,8 @@ export function applyPlan(trail: Trail, input: PlanInput, ctx: PlanCtx): Trail {
   const change = input.change as Record<string, unknown> | undefined
   const reason = str(change?.reason, 'change.reason', 300)
   const events: TrailEvent[] = []
-  const drift = (text: string, step?: string) => events.push({ at: now, kind: 'drift', origin: 'session', repo: '', text, step })
+  // A mirrored task list is not a plan Claude committed to: its changes are not drift.
+  const drift = (text: string, step?: string) => void (ctx.isMirror || events.push({ at: now, kind: 'drift', origin: 'session', repo: '', text, step }))
 
   let { phases, steps } = trail
   if (input.phases !== undefined) {
@@ -180,14 +182,14 @@ export function applyPlan(trail: Trail, input: PlanInput, ctx: PlanCtx): Trail {
     const isFirstPlan = trail.planVersion === 0 || trail.steps.length === 0
     const prevLive = trail.steps.filter(s => s.status !== 'dropped').map(s => s.title)
     const nextTitles = new Set(next.steps.map(s => s.title))
-    const added = isFirstPlan ? [] : next.steps.filter(s => !prev.has(s.title)).map(s => s.title)
+    const added = isFirstPlan || ctx.isMirror ? [] : next.steps.filter(s => !prev.has(s.title)).map(s => s.title)
     const removed = trail.steps.filter(s => s.status !== 'dropped' && s.status !== 'done' && !nextTitles.has(s.title)).map(s => s.title)
     const newlyDropped = next.steps.filter(s => s.status === 'dropped' && prev.get(s.title)?.status !== 'dropped').map(s => s.title)
     const common = next.steps.map(s => s.title).filter(t => prevLive.includes(t))
     const prevOrder = prevLive.filter(t => common.includes(t))
     const isReordered = !isFirstPlan && common.join('\n') !== prevOrder.join('\n')
     const isChanged = added.length > 0 || removed.length > 0 || (!isFirstPlan && newlyDropped.length > 0) || isReordered
-    if (isChanged && !reason) {
+    if (isChanged && !reason && !ctx.isMirror) {
       const what = [added.length ? `added ${added.join(', ')}` : '', removed.length ? `removed ${removed.join(', ')}` : '', newlyDropped.length ? `dropped ${newlyDropped.join(', ')}` : '', isReordered ? 'reordered steps' : ''].filter(Boolean).join('; ')
       throw new Error(`the plan changed (${what}): say why in change.reason`)
     }
@@ -219,7 +221,7 @@ export function applyPlan(trail: Trail, input: PlanInput, ctx: PlanCtx): Trail {
     // Done while an earlier step is still todo: out of order.
     merged.forEach((s, i) => {
       const wasDone = prev.get(s.title)?.status === 'done'
-      if (s.status === 'done' && !wasDone && merged.slice(0, i).some(e => e.status === 'todo')) {
+      if (!ctx.isMirror && s.status === 'done' && !wasDone && merged.slice(0, i).some(e => e.status === 'todo')) {
         s.outOfOrder = true
         drift(`"${s.title}" was done before earlier steps`, s.title)
       }
@@ -498,4 +500,66 @@ export function ago(ms: number): string {
 
 export function repoName(root: string): string {
   return root.split('/').filter(Boolean).at(-1) ?? root
+}
+
+const TASK_STATUS: Record<string, StepStatus> = { pending: 'todo', in_progress: 'doing', completed: 'done' }
+type TaskStep = { title: string; status: StepStatus }
+
+/**
+ * The task list Claude keeps anyway, as plan input (applied with `isMirror`): the desktop app's
+ * update_plan (a whole list, or advance / done / start) and wrap_up (its recap is "where we are"), or
+ * Claude Code's TodoWrite. Each new list is a phase, "Request n"; what the previous one left open is
+ * dropped. Undefined when the call changes nothing.
+ */
+export function taskListPlan(trail: Trail, tool: string, args: Record<string, unknown>): PlanInput | undefined {
+  const phases = (trail.planFrom === 'tasks' ? trail.phases : []).map(title => ({ title, steps: trail.steps.filter(s => s.phase === title).map((s): TaskStep => ({ title: s.title, status: s.status })) }))
+  const cur = phases.at(-1)
+  const isOpen = (s: TaskStep) => s.status === 'todo' || s.status === 'doing'
+  const raw = tool === 'TodoWrite' ? args.todos : args.items
+  if (Array.isArray(raw)) {
+    const list = raw.flatMap((x): TaskStep[] => {
+      const o = x as Record<string, unknown> | null
+      const title = typeof o?.content === 'string' ? o.content.trim().slice(0, 160) : ''
+      const status = TASK_STATUS[String(o?.status)]
+      return title && status ? [{ title, status }] : []
+    })
+    if (list.length === 0) return undefined
+    // A list sharing a step with the current one revises it; any other starts the next request.
+    // A revision keeps the steps already done that it leaves out: they happened.
+    if (cur && list.some(i => cur.steps.some(s => s.title === i.title))) cur.steps = [...cur.steps.filter(s => s.status === 'done' && !list.some(i => i.title === s.title)), ...list]
+    else {
+      if (cur) cur.steps = cur.steps.map(s => (isOpen(s) ? { ...s, status: 'dropped' } : s))
+      const n = 1 + Math.max(0, ...phases.map(p => Number(/\d+$/.exec(p.title)?.[0] ?? 0)))
+      phases.push({ title: T.request(n), steps: list })
+    }
+  } else if (cur) {
+    const steps = cur.steps
+    if (tool.endsWith('wrap_up')) {
+      for (const s of steps) if (s.status === 'doing') s.status = 'done'
+    } else {
+      if (args.advance === true) {
+        const doing = steps.find(s => s.status === 'doing')
+        if (doing) doing.status = 'done'
+        const next = steps.find(s => s.status === 'todo')
+        if (next) next.status = 'doing'
+      }
+      for (const k of Array.isArray(args.done) ? args.done : []) if (steps[Number(k) - 1]) steps[Number(k) - 1]!.status = 'done'
+      const start = steps[Number(args.start) - 1]
+      if (start) start.status = 'doing'
+    }
+  } else return undefined
+  // Titles are a step's identity across the plan: a later list's "Run tests" must not take an earlier one's place.
+  const seen = new Set<string>()
+  const unique = phases.map((p, pi) => ({ title: p.title, steps: p.steps.map(s => ({ ...s, title: seen.has(s.title) ? `${s.title} (${pi + 1})` : (seen.add(s.title), s.title) })) }))
+  // shortcut: the newest phases that fit the plan's limits (12 phases, 40 steps); older requests fall off. Keep them elsewhere if they are missed.
+  const kept: typeof unique = []
+  let count = 0
+  for (const p of [...unique].reverse()) {
+    if (kept.length === 12 || count + p.steps.length > 40) break
+    kept.unshift(p)
+    count += p.steps.length
+  }
+  if (kept.length === 0) return undefined
+  const recap = tool.endsWith('wrap_up') && typeof args.recap === 'string' ? args.recap : undefined
+  return { phases: kept, ...(recap ? { whereWasI: recap } : {}) }
 }

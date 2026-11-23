@@ -57,6 +57,8 @@ export type Trail = {
   turn: number
   planTurn: number
   planVersion: number
+  /** 'tasks': the plan mirrors Claude's own task list (update_plan, TodoWrite) until Claude records one. */
+  planFrom?: 'tasks'
   /** Commits since the plan was last saved. */
   commitsSincePlan: number
   /** Notes for Claude's next prompt: outside work, pane edits. */
@@ -122,7 +124,7 @@ declare module 'claude-code' {
       cleared: Shaped<Record<string, number>>
       aside: Shaped<{ title: string; text?: string; isLoading: boolean } | null>
       lang: Shaped<'en' | 'fr'>
-      settings: Shaped<{ autoStart: boolean; othersDays: number; maxOthers: number }>
+      settings: Shaped<{ autoStart: boolean; othersDays: number; maxOthers: number; commitDates: boolean }>
     }
   }
 }
