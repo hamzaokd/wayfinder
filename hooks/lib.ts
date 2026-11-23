@@ -498,6 +498,16 @@ export function ago(ms: number): string {
   return h < 24 ? T.hoursAgo(h) : T.daysAgo(Math.floor(h / 24))
 }
 
+/** An age in a few characters ("35m", "8h", "4d"), for a column of them. */
+export function agoShort(ms: number): string {
+  const m = Math.floor(ms / 60000)
+  const u = T.ageShort
+  if (m < 1) return u.now
+  if (m < 60) return `${m}${u.m}`
+  const h = Math.floor(m / 60)
+  return h < 24 ? `${h}${u.h}` : `${Math.floor(h / 24)}${u.d}`
+}
+
 export function repoName(root: string): string {
   return root.split('/').filter(Boolean).at(-1) ?? root
 }

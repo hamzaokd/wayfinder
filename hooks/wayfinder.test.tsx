@@ -221,10 +221,10 @@ test('the graph puts steps on their branch, folds finished phases, and plans the
   expect(shown).toContain('Merge into main (planned)')
   // Each row knows its phase and how far along it is: the pane draws a block per phase.
   expect(g.rows.filter(r => r.label?.id?.startsWith('phase:')).map(r => `${r.phase}:${r.state}`)).toEqual(['Investigate:done', 'Build:current', 'Ship:future'])
-  expect(shown.some(x => x.startsWith('fix/login · also edits auth.ts'))).toBe(true)
+  expect(shown.some(x => x.startsWith('fix/login also edits auth.ts'))).toBe(true)
   // The commitDates setting off: no age beside any commit.
-  expect(g.rows.map(r => r.label?.tail)).not.toContain(' · outside')
-  expect(graphLanes({ ...view, showCommitDates: false }).rows.map(r => r.label?.tail)).toContain(' · outside')
+  expect(g.rows.filter(r => r.key.startsWith('commit:') && r.label).every(r => r.label!.age !== undefined)).toBe(true)
+  expect(graphLanes({ ...view, showCommitDates: false }).rows.some(r => r.label?.age !== undefined)).toBe(false)
   // Phases, steps and labelled commits are clickable (the folded phase's commit is a bare dot).
   expect(g.rows.flatMap(r => r.label?.id ?? [])).toEqual(['phase:Investigate', 'phase:Build', 'step:Writer', 'commit:' + H('b'), 'commit:' + H('l'), 'commit:' + H('m'), 'phase:Ship', 'step:PR'])
   // Each row shows its own band of one drawing, and the bands tile it with no gap.
@@ -410,7 +410,8 @@ test('the pane: the graph, clicks on it, the dialog, and where actions go', { op
     expect(await graph()).toContain('2.1 Benchmark on 1M rows')
     expect(await graph()).toContain(' · waiting on you')
     // A commit leads with its hash; with lanes drawn, in its branch's color.
-    expect(await graph()).toMatch(/bbbbbbb \n?add writer/)
+    // The hash, its age in a column, then the label.
+    expect(await graph()).toMatch(/bbbbbbb \n?2m +\n?add writer/)
     if (surface === 'desktop') expect((await ui.find({ type: 'Text', text: /^bbbbbbb $/ }))?.props.color).toBe('#639922')
     // The app draws a button's text in its own color: the hash sits beside it, the dimming is the button's own.
     // The app draws a button's label as its text: the hash beside it is not repeated in it.

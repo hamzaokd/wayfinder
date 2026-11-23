@@ -624,8 +624,10 @@ async function drawPane($: $, e: RenderInput) {
         {Svg && <Svg source={g.slice(row)} alt={l?.text ?? 'commit'} width={g.width} height={row.height} />}
         {/* Beside the button, not in it: the app draws a button's text in its own color, whatever a Text inside says. */}
         {l?.lead && (
-          <Box flexShrink={0}>
+          <Box flexShrink={0} flexDirection="row">
             <Text color={l.leadColor} mono={l.mono} weight="semibold">{`${l.lead} `}</Text>
+            {/* Padded in mono so the labels after it start in one column. */}
+            {l.age !== undefined && <Text dimColor mono>{`${l.age.padEnd(4)} `}</Text>}
           </Box>
         )}
         {l && id ? (

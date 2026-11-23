@@ -10,6 +10,8 @@ const RECENT_MS = 7 * 86_400_000
 const MAX_OTHER_LANES = 4
 // Up to 6 lanes: 25 each made 130-row panes the desktop app left blank.
 const MAX_PER_LANE = 10
+// A branch shown only for context (another session's, one editing the same files, a recent one).
+const SIDE_KEEP = 4
 const BASE_KEEP = 5
 
 // Answers that only change when a tip moves: keyed by the hashes involved.
@@ -169,7 +171,7 @@ export async function repoGraph($: $, live: RepoLive, ctx: GraphCtx): Promise<Re
   let skipped = 0
   lanes.forEach((lane, i) => {
     const mine = all.filter(c => c.lane === i)
-    const limit = lane.isBase ? BASE_KEEP : MAX_PER_LANE
+    const limit = lane.isBase ? BASE_KEEP : lane.relevance < 1 ? SIDE_KEEP : MAX_PER_LANE
     mine.forEach((c, k) => {
       if (k < limit || forkPoints.has(c.hash)) kept.push(refsOf.has(c.hash) ? { ...c, refs: refsOf.get(c.hash) } : c)
       else skipped += 1

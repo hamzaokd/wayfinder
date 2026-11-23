@@ -3,7 +3,7 @@
 // Drawn as rows: a slice of the lane drawing beside native, clickable text.
 import type { GraphCommit, Lane, RepoLive, Step, Trail } from '../types'
 import { T } from './i18n'
-import { ago, isStuck, stepNo } from './lib'
+import { ago, agoShort, isStuck, stepNo } from './lib'
 
 export type GraphView = {
   trail: Trail
@@ -98,7 +98,7 @@ export function items(v: GraphView): { list: Item[]; lanes: Lane[]; current: num
     // Only a folded phase's commits go without text; a side branch's bare dots lined up with no row.
     const isCompact = phase !== undefined && closed.has(phase)
     // A side branch's tip row names the branch (drawn as the row's lead) and why it is shown.
-    const label = isSide && isTip ? `· ${lane.why}` : undefined
+    const label = isSide && isTip ? lane.why : undefined
     list.push({ kind: 'commit', t: floor, o: 1, lane: c.lane, phase, c, tag, isOwn: own.has(c.hash), isCompact, label })
   }
 
@@ -193,20 +193,21 @@ export function stepTag(v: GraphView, s: Step): { text: string; isAlert: boolean
  * row names its branch. The pane draws it beside the row's button: the app draws a button's text in its
  * own color, dropping a Text's color and dim inside it.
  */
-export type RowLabel = { lead?: string; leadColor?: string; text: string; tail?: string; color?: 'success' | 'suggestion' | 'error' | 'warning' | `#${string}`; tailColor?: 'warning'; dim?: boolean; mono?: boolean; strike?: boolean; bold?: boolean; id?: string }
+export type RowLabel = { lead?: string; leadColor?: string; age?: string; text: string; tail?: string; color?: 'success' | 'suggestion' | 'error' | 'warning' | `#${string}`; tailColor?: 'warning'; dim?: boolean; mono?: boolean; strike?: boolean; bold?: boolean; id?: string }
 
 export function rowLabel(v: GraphView, it: Item): RowLabel | undefined {
   if (it.kind === 'commit') {
     if (it.isCompact) return undefined
     // Branch names right after the hash, as git log --decorate puts them: at the end they were cut off.
     const refs = it.c.refs?.length ? `(${it.c.refs.join(', ')}) ` : ''
-    const age = v.showCommitDates === false ? '' : ` · ${ago(v.now - it.c.at)}`
-    const tail = (it.tag && !it.label ? ` · ${it.tag}${age}` : it.isOwn || it.label ? age : '') || undefined
+    // Every commit's age, in a column before its label (the commitDates setting turns it off).
+    const age = v.showCommitDates === false ? undefined : agoShort(v.now - it.c.at)
+    const tail = it.tag && !it.label ? ` · ${it.tag}` : undefined
     const lane = v.repo.graph?.lanes[it.lane]
     const color = lane && laneColor(lane, it.lane)
     // A branch's tip row names the branch, in its color; other commits lead with their hash in it.
-    if (it.label) return { lead: lane?.branch, leadColor: color, text: it.label, tail, dim: true, id: rowKey(it) }
-    return { lead: it.c.hash.slice(0, 7), leadColor: color, text: refs + it.c.subject, tail, mono: true, color: it.tag ? 'warning' : undefined, dim: !it.isOwn && !it.tag, id: rowKey(it) }
+    if (it.label) return { lead: lane?.branch, leadColor: color, age, text: it.label, tail, dim: true, id: rowKey(it) }
+    return { lead: it.c.hash.slice(0, 7), leadColor: color, age, text: refs + it.c.subject, tail, mono: true, color: it.tag ? 'warning' : undefined, dim: !it.isOwn && !it.tag, id: rowKey(it) }
   }
   if (it.kind === 'step') {
     const s = it.s
@@ -499,7 +500,7 @@ export function graphText(v: GraphView): TextLine[] {
     if (!l) continue
     const glyph = it.kind === 'step' ? stepGlyph(it.s) : { commit: '*', decision: '◇', stash: '▫', dirty: '◌', merge: '╰', phase: '' }[it.kind]
     const pad = it.kind === 'phase' || it.kind === 'merge' ? '' : '│ '.repeat(it.lane)
-    out.push({ text: `${pad}${glyph ? `${glyph} ` : ''}${l.lead ? `${l.lead} ` : ''}${l.text}${l.tail ?? ''}`, color: l.color ?? l.tailColor, dim: l.dim, id: l.id })
+    out.push({ text: `${pad}${glyph ? `${glyph} ` : ''}${l.lead ? `${l.lead} ` : ''}${l.age ? `${l.age} ` : ''}${l.text}${l.tail ?? ''}`, color: l.color ?? l.tailColor, dim: l.dim, id: l.id })
   }
   return out
 }

@@ -10,6 +10,8 @@ const EN = {
   minutesAgo: (m: number) => `${m}m ago`,
   hoursAgo: (h: number) => `${h}h ago`,
   daysAgo: (d: number) => `${d}d ago`,
+  /** A commit's age in the timeline's narrow column. */
+  ageShort: { now: 'now', m: 'm', h: 'h', d: 'd' },
   awayFor: (mins: number) => (mins < 60 ? `${mins} min` : mins < 1440 ? `${Math.round(mins / 60)} h` : `${Math.round(mins / 1440)} d`),
   // Statuses as words
   status: { todo: 'todo', doing: 'doing', done: 'done', blocked: 'blocked', dropped: 'dropped' } as Record<string, string>,
@@ -176,6 +178,7 @@ const FR: typeof EN = {
   minutesAgo: m => `il y a ${m} min`,
   hoursAgo: h => `il y a ${h} h`,
   daysAgo: d => `il y a ${d} j`,
+  ageShort: { now: 'auj.', m: 'min', h: 'h', d: 'j' },
   awayFor: mins => (mins < 60 ? `${mins} min` : mins < 1440 ? `${Math.round(mins / 60)} h` : `${Math.round(mins / 1440)} j`),
   status: { todo: 'à faire', doing: 'en cours', done: 'fait', blocked: 'bloqué', dropped: 'abandonné' },
   stepsDone: k => `${n(k, 'étape faite', 'étapes faites')}`,
