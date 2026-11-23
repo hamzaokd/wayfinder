@@ -713,3 +713,28 @@ test('settings: the pane changes them through Claude Code settings, and a refuse
   expect(await ui.find({ type: 'Text', text: /last 7 days/ })).toBeTruthy()
   await ui.unmount()
 })
+
+test('the first message of a session with no plan asks for one, once', async ($, on) => {
+  mock.store(on, {})
+  mock.clock(on, { now: 50_000_000 })
+  fakeGit(on, { head: H('a'), log: '' })
+  on('session.id', () => ({ value: 's-new' }))
+  on('env.get', () => ({ value: undefined }))
+  on('session.messages', () => ({ value: [] }))
+  on('tool.register', () => ({ value: { tool: PROGRESS_TOOL } }))
+  on('command.register', (_, e) => ({ value: { command: e.name } }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('ui.status', () => ({ value: undefined }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  let context: readonly string[] = []
+  on('prompt.submit', (_, e) => {
+    context = e.context ?? []
+    return { text: e.text, context: e.context }
+  })
+  await $.session.start({ cwd: 'C:/r', surface: 'desktop', isInteractive: true })
+  // The first message is when Claude picks how to plan, often with the app's own plan tool.
+  await $.prompt.submit({ text: 'make the ReID model configurable', wait: false, origin: { kind: 'composer' } })
+  expect(context.join('\n')).toContain('No plan is recorded for this session yet')
+  await $.prompt.submit({ text: 'go on', wait: false, origin: { kind: 'composer' } })
+  expect(context.join('\n')).not.toContain('No plan is recorded')
+})

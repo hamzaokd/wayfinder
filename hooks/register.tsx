@@ -644,8 +644,9 @@ export const register: Register = (on, opts: PluginOptions) => {
     } else if (waits.length > 0) {
       // The user's reply is when a wait ends (answered, done, or no longer wanted): the plan must follow it then, not turns later.
       lines.push(`Your plan has step(s) waiting on the user: ${waits.map(s => quoted(s.title)).join(', ')}. If this message settles one (an answer, done, or not wanted), call ${PROGRESS_TOOL} in this turn.`)
-    } else if (t.steps.length === 0 && t.turn >= 1 && !hasNudged) {
-      lines.push(`No plan is recorded for this session yet. If this work has several steps, record it with ${PROGRESS_TOOL}.`)
+    } else if (t.steps.length === 0 && !hasNudged) {
+      // From the first message: that is when Claude picks how to plan, often with the app's own plan tool instead.
+      lines.push(`No plan is recorded for this session yet. If this work has several steps, record it with ${PROGRESS_TOOL} before starting, even if you also use another plan or todo tool: only ${PROGRESS_TOOL} shows in the Wayfinder pane.`)
       hasNudged = true
     }
     // Files another session edits too: said once per session and file, so Claude checks before editing.
