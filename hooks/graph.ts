@@ -37,6 +37,19 @@ export function phaseState(steps: readonly Step[]): PhaseState {
   return steps.every(s => s.status === 'dropped') ? 'done' : 'future'
 }
 
+/**
+ * When a phase ran: from its first started step to its last finished one; an unfinished phase runs on
+ * (end Infinity), one not started has start Infinity. A commit dated inside is drawn in its block.
+ */
+export function phaseSpan(trail: Trail, title: string): { start: number; end: number } {
+  const own = trail.steps.filter(s => s.phase === title)
+  // A step dropped before it ever started says nothing about when its phase ran.
+  // Steps back at todo (started, then reset) don't count either: the phase sits with the future.
+  const starts = own.filter(s => s.status !== 'todo' && (s.status !== 'dropped' || s.startedAt !== undefined)).map(s => s.startedAt ?? s.doneAt).filter((x): x is number => x !== undefined)
+  const ends = own.map(s => s.doneAt).filter((x): x is number => x !== undefined)
+  return { start: starts.length ? Math.min(...starts) : Infinity, end: phaseState(own) === 'done' ? (ends.length ? Math.max(...ends) : -Infinity) : Infinity }
+}
+
 /** A click on a phase flips it; until then finished phases are folded and the rest are open. */
 export function isPhaseOpen(title: string, state: PhaseState, expanded: Readonly<Record<string, boolean>>): boolean {
   return expanded[title] ?? state !== 'done'
@@ -60,17 +73,12 @@ export function items(v: GraphView): { list: Item[]; lanes: Lane[]; current: num
   const phases = trail.phases.map((title, pi) => {
     const own = trail.steps.filter(s => s.phase === title)
     const state = phaseState(own)
-    // A step dropped before it ever started says nothing about when its phase ran.
-    // Steps back at todo (started, then reset) don't count either: the phase sits with the future.
-    const starts = own.filter(s => s.status !== 'todo' && (s.status !== 'dropped' || s.startedAt !== undefined)).map(s => s.startedAt ?? s.doneAt).filter((x): x is number => x !== undefined)
-    const ends = own.map(s => s.doneAt).filter((x): x is number => x !== undefined)
     return {
       title,
       pi,
       state,
       isOpen: isPhaseOpen(title, state, v.expanded),
-      start: starts.length ? Math.min(...starts) : Infinity,
-      end: state === 'done' ? (ends.length ? Math.max(...ends) : -Infinity) : Infinity,
+      ...phaseSpan(trail, title),
       count: own.filter(s => s.status === 'done').length,
       total: own.filter(s => s.status !== 'dropped').length,
     }

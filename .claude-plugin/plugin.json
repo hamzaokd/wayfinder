@@ -1,6 +1,6 @@
 {
   "name": "wayfinder",
-  "version": "0.4.4",
+  "version": "0.4.5",
   "description": "A pane beside the chat showing this session's plan, git state and timeline, plus your other recent sessions.",
   "types": "./types/index.d.ts",
   "userConfig": {
@@ -8,6 +8,6 @@
     "othersDays": { "type": "number", "title": "Other sessions: days back", "description": "Other sessions show while they moved within this many days.", "default": 7, "min": 1, "max": 60 },
     "maxOthers": { "type": "number", "title": "Other sessions: how many", "description": "The most other sessions the pane lists.", "default": 8, "min": 1, "max": 30 },
     "commitDates": { "type": "boolean", "title": "Show commit ages", "description": "Off: the timeline shows no \"4d ago\" beside commits.", "default": true },
-    "maxCommits": { "type": "number", "title": "Commits in a repo's graph: at most", "description": "The newest ones stay; older ones are counted as not shown.", "default": 30, "min": 5, "max": 100 }
+    "maxCommits": { "type": "number", "title": "Commits in a repo's graph: at most", "description": "Around the plan: the newest ones stay, older ones are counted as not shown. Commits in a plan block are never cut.", "default": 30, "min": 5, "max": 100 }
   }
 }

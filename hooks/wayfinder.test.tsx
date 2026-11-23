@@ -192,6 +192,9 @@ test('cutting a branch to its newest commits keeps what joins it to the others',
   // The maxCommits setting: the newest that fit, the rest counted as not shown.
   const capped = keepCommits(lanes, all, new Map(), 3)
   expect([capped.kept.map(x => x.subject), capped.skipped]).toEqual([['6', '5', '4'], 4])
+  // Commits in a plan block are all kept, past the branch's 4 and the cap alike, and count against neither.
+  const plan = keepCommits(lanes, all, new Map(), 2, x => x.subject === '2' || x.subject === '1')
+  expect([plan.kept.map(x => x.subject), plan.skipped]).toEqual([['6', '5', '2', '1'], 3])
   // Drawn, the side lane's line comes from the top: its history goes on above what is shown.
   const base = live()
   const view = { trail: emptyTrail('s1', 0), repo: { ...base, branch: 'main', dirty: 0, graph: { ...base.graph!, lanes, stashes: [], commits: [...kept].reverse() } }, isPrimary: true, expanded: {}, now: 1, ownerOf: new Map<string, string>() }

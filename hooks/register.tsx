@@ -3,7 +3,7 @@ import type { EngineInterface, PluginOptions, Register, RenderInput } from 'clau
 
 import type { RepoLive, Seen, Trail, TrailEvent } from '../types'
 import { git, isAncestor, repoGraph, repoRoot, snapshot } from './gitgraph'
-import { graphLanes, graphText, isPhaseOpen, legendSvg, phaseState } from './graph'
+import { graphLanes, graphText, isPhaseOpen, legendSvg, phaseSpan, phaseState } from './graph'
 import type { GraphRow, GraphView, PhaseState, RowLabel } from './graph'
 import { langOf, setLang, T } from './i18n'
 import {
@@ -204,6 +204,11 @@ async function syncNow($: $, origin: 'session' | 'outside'): Promise<void> {
   const roots = [...new Set([...Object.keys(t.seen), ...newRoots])]
   newRoots.clear()
   const snaps = (await Promise.all(roots.map(r => snapshot($, r)))).filter((r): r is RepoLive => r !== undefined)
+  // The plan's commits are never cut by the graph's limits: this session's, and any made while a phase ran.
+  const own = new Set(t.events.flatMap(e => (e.kind === 'commit' && e.origin === 'session' && e.hash ? [e.hash] : [])))
+  const spans = t.phases.map(p => phaseSpan(t, p)).filter(s => s.start !== Infinity)
+  const isPlanCommit = (c: { hash: string; at: number }) => own.has(c.hash) || spans.some(s => s.start <= c.at && c.at <= s.end)
+  const maxCommits = (await read($, settings)).maxCommits
   const lives = await Promise.all(
     snaps.map(async live => {
       const otherBranches = new Map<string, string>()
@@ -211,7 +216,7 @@ async function syncNow($: $, origin: 'session' | 'outside'): Promise<void> {
         const b = o.seen[live.root]?.branch
         if (b) otherBranches.set(b, o.goal ?? 'another session')
       }
-      const graph = await repoGraph($, live, { now, sessionBranches: Object.keys(t.seen[live.root]?.heads ?? {}), otherBranches, maxCommits: (await read($, settings)).maxCommits })
+      const graph = await repoGraph($, live, { now, sessionBranches: Object.keys(t.seen[live.root]?.heads ?? {}), otherBranches, maxCommits, isPlanCommit })
       return { ...live, graph }
     }),
   )

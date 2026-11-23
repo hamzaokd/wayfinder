@@ -93,8 +93,10 @@ export type GraphCtx = {
   sessionBranches: readonly string[]
   /** Branches other sessions are on in this repo, and that session's goal. */
   otherBranches: ReadonlyMap<string, string>
-  /** The most commits the graph keeps (the maxCommits setting). */
+  /** The most commits the graph keeps around the plan (the maxCommits setting). */
   maxCommits?: number
+  /** A commit drawn in a plan block (this session's, or made while a phase ran): never cut. */
+  isPlanCommit?: (c: GraphCommit) => boolean
 }
 
 type Ref = { branch: string; tip: string; at: number }
@@ -167,7 +169,7 @@ export async function repoGraph($: $, live: RepoLive, ctx: GraphCtx): Promise<Re
   claimLanes(lanes, all)
   const refsOf = dropEmptyLanes(lanes, all)
 
-  const { kept, skipped } = keepCommits(lanes, all, refsOf, ctx.maxCommits)
+  const { kept, skipped } = keepCommits(lanes, all, refsOf, ctx.maxCommits, ctx.isPlanCommit)
 
   // Oldest first in git's own order (--date-order: never a parent after its child), not by date: a
   // rebased commit's date can be older than its parent's, which drew lines running back up.
@@ -185,19 +187,27 @@ export async function repoGraph($: $, live: RepoLive, ctx: GraphCtx): Promise<Re
 /**
  * Keeps the graph short: each lane's newest commits, plus every fork point, every named commit, and
  * every merge whose merged-in commit stays (cutting one cut the line between two branches); then at
- * most `max` of those, the newest (past it, a lane runs up to the top of the graph).
+ * most `max` of those, the newest (past it, a lane runs up to the top of the graph). The plan's own
+ * commits (`isPlan`: drawn in a plan block) are all kept and count against neither limit.
  */
-export function keepCommits(lanes: readonly Lane[], all: readonly GraphCommit[], refsOf: ReadonlyMap<string, string[]>, max = Infinity): { kept: GraphCommit[]; skipped: number } {
+export function keepCommits(lanes: readonly Lane[], all: readonly GraphCommit[], refsOf: ReadonlyMap<string, string[]>, max = Infinity, isPlan: (c: GraphCommit) => boolean = () => false): { kept: GraphCommit[]; skipped: number } {
   const forkPoints = new Set([...lanes.map(l => l.forkFrom).filter(Boolean), ...refsOf.keys()])
+  const plan = new Set<string>()
   const isKept = new Set<string>()
   const rest: GraphCommit[] = []
   lanes.forEach((lane, i) => {
     const limit = lane.isBase ? BASE_KEEP : lane.relevance < 1 ? SIDE_KEEP : MAX_PER_LANE
-    all.filter(c => c.lane === i).forEach((c, k) => (k < limit || forkPoints.has(c.hash) ? isKept.add(c.hash) : rest.push(c)))
+    let k = 0
+    for (const c of all.filter(c => c.lane === i)) {
+      if (isPlan(c)) plan.add(c.hash)
+      else if (k++ < limit || forkPoints.has(c.hash)) isKept.add(c.hash)
+      else rest.push(c)
+    }
   })
-  for (const c of rest) if (c.parents[1] && isKept.has(c.parents[1])) isKept.add(c.hash)
-  // `all` is newest first.
-  const kept = all.filter(c => isKept.has(c.hash)).slice(0, max).map(c => (refsOf.has(c.hash) ? { ...c, refs: refsOf.get(c.hash) } : c))
+  for (const c of rest) if (c.parents[1] && (isKept.has(c.parents[1]) || plan.has(c.parents[1]))) isKept.add(c.hash)
+  // `all` is newest first: the cap keeps the newest commits around the plan.
+  const keep = new Set([...all.filter(c => isKept.has(c.hash)).slice(0, max).map(c => c.hash), ...plan])
+  const kept = all.filter(c => keep.has(c.hash)).map(c => (refsOf.has(c.hash) ? { ...c, refs: refsOf.get(c.hash) } : c))
   return { kept, skipped: all.filter(c => c.lane !== -1).length - kept.length }
 }
 
