@@ -176,7 +176,10 @@ test('the graph puts steps on their branch, folds finished phases, and plans the
   // Nothing animates on a first draw; drawn again with a step that wasn't there, it eases in.
   expect(g.slice(second)).not.toContain('class="enter"')
   const again = graphLanes({ ...view, trail: { ...t, steps: [...t.steps, { ...t.steps[2]!, title: 'Docs' }] } }, new Set(g.rows.map(r => r.key)))
-  expect(again.slice(again.rows[0]!).match(/class="enter"/g)?.length).toBe(1)
+  // A slice carries only the shapes that reach its band: the new step eases in on its own row alone.
+  const docs = again.rows.find(r => r.key.includes('Docs'))!
+  expect(again.slice(docs).match(/class="enter"/g)?.length).toBe(1)
+  expect(again.rows.filter(r => again.slice(r).includes('class="enter"'))).toEqual([docs])
   expect(graphText(view).some(l => l.text.includes('◉ 2.1 Writer · you are here'))).toBe(true)
 
   // A click folds or unfolds one phase.

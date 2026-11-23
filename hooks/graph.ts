@@ -266,7 +266,9 @@ export function graphLanes(v: GraphView, seen?: ReadonlySet<string>): { width: n
 
   const rows: GraphRow[] = []
   const ys: number[] = []
-  const parts: string[] = []
+  // Every shape keeps the band of y it covers, so a row's slice carries only the shapes that reach it.
+  type Shape = { y1: number; y2: number; svg: string }
+  const marks: Shape[] = []
   const at = new Map<string, { x: number; y: number }>()
   let top = 0
   let nowY = 0
@@ -328,13 +330,14 @@ export function graphLanes(v: GraphView, seen?: ReadonlySet<string>): { width: n
       const bx = laneX(lanes.findIndex(l => l.isBase))
       row.push(`<path d="M${x} ${y - 12} C${x} ${y + 4}, ${bx} ${y - 4}, ${bx} ${y + 12}" class="rail-todo" fill="none"/>`)
     }
-    parts.push(isFresh(key) ? `<g class="enter">${row.join('')}</g>` : row.join(''))
+    // A row's marks reach at most 12 px past its centre (the halo).
+    if (row.length) marks.push({ y1: y - 12, y2: y + 12, svg: isFresh(key) ? `<g class="enter">${row.join('')}</g>` : row.join('') })
     top += height
   })
   const lastY = ys.at(-1) ?? 0
 
   // Lane lines: each lane runs through its own rows; the current one goes on dashed past "now".
-  const lines: string[] = []
+  const lines: Shape[] = []
   lanes.forEach((l, i) => {
     const mineY = list.map((it, k) => (it.lane === i ? ys[k]! : undefined)).filter((n): n is number => n !== undefined)
     const x = laneX(i)
@@ -343,13 +346,13 @@ export function graphLanes(v: GraphView, seen?: ReadonlySet<string>): { width: n
     const y2 = l.isBase ? lastY : mineY.length ? Math.max(...mineY) : 0
     const from = l.forkFrom ? at.get(l.forkFrom) : undefined
     if (from && from.x !== x) {
-      lines.push(`<path d="M${from.x} ${from.y} C${from.x} ${from.y + 14}, ${x} ${y1 - 14}, ${x} ${y1}" fill="none" stroke="${color}" stroke-width="2.5" opacity="${l.relevance}"/>`)
+      lines.push({ y1: Math.min(from.y, y1), y2: Math.max(from.y, y1), svg: `<path d="M${from.x} ${from.y} C${from.x} ${from.y + 14}, ${x} ${y1 - 14}, ${x} ${y1}" fill="none" stroke="${color}" stroke-width="2.5" opacity="${l.relevance}"/>` })
     } else if (l.isBase || l.isCurrent) {
       y1 = 0
     }
     const solidEnd = l.isCurrent || l.isBase ? Math.min(Math.max(nowY, y1), y2) : y2
-    if (solidEnd > y1) lines.push(`<line x1="${x}" y1="${y1}" x2="${x}" y2="${solidEnd}" stroke="${color}" stroke-width="2.5" opacity="${l.relevance}"/>`)
-    if (y2 > solidEnd) lines.push(`<line x1="${x}" y1="${solidEnd}" x2="${x}" y2="${y2}" class="rail-todo" opacity="${l.relevance}"/>`)
+    if (solidEnd > y1) lines.push({ y1, y2: solidEnd, svg: `<line x1="${x}" y1="${y1}" x2="${x}" y2="${solidEnd}" stroke="${color}" stroke-width="2.5" opacity="${l.relevance}"/>` })
+    if (y2 > solidEnd) lines.push({ y1: solidEnd, y2, svg: `<line x1="${x}" y1="${solidEnd}" x2="${x}" y2="${y2}" class="rail-todo" opacity="${l.relevance}"/>` })
   })
   // Merge commits: a curve from the second parent into the merge.
   for (const c of v.repo.graph?.commits ?? []) {
@@ -357,17 +360,18 @@ export function graphLanes(v: GraphView, seen?: ReadonlySet<string>): { width: n
     const from = c.parents[1] ? at.get(c.parents[1]) : undefined
     const p = v.repo.graph!.commits.find(x => x.hash === c.parents[1])?.lane
     const pl = p === undefined ? undefined : lanes[p]
-    if (to && from && pl && p !== undefined && from.x !== to.x) lines.push(`<path d="M${from.x} ${from.y} C${from.x} ${from.y + 14}, ${to.x} ${to.y - 14}, ${to.x} ${to.y}" fill="none" stroke="${laneColor(pl, p)}" stroke-width="2" opacity="${pl.relevance}"/>`)
+    if (to && from && pl && p !== undefined && from.x !== to.x) lines.push({ y1: Math.min(from.y, to.y), y2: Math.max(from.y, to.y), svg: `<path d="M${from.x} ${from.y} C${from.x} ${from.y + 14}, ${to.x} ${to.y - 14}, ${to.x} ${to.y}" fill="none" stroke="${laneColor(pl, p)}" stroke-width="2" opacity="${pl.relevance}"/>` })
   }
 
-  // shortcut: every row's image carries the whole lane drawing and shows its own band (a viewBox); cut it per row if pages get large.
-  const body = lines.join('') + parts.join('')
+  // Lines first, so marks draw over them. Slices holding the whole drawing made a 140-row repo's pane
+  // 6 MB per draw, the likely reason the desktop app left it blank.
+  const shapes = [...lines, ...marks]
   const legendH = ly + 6
   return {
     width,
     legend: { source: svgDoc(0, LW, legendH, legend.join('')), width: LW, height: legendH },
     rows,
-    slice: row => svgDoc(row.top, width, row.height, body),
+    slice: row => svgDoc(row.top, width, row.height, shapes.filter(sh => sh.y2 >= row.top && sh.y1 <= row.top + row.height).map(sh => sh.svg).join('')),
   }
 }
 
