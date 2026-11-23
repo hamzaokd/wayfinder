@@ -93,7 +93,8 @@ export function items(v: GraphView): { list: Item[]; lanes: Lane[]; current: num
     const phase = phaseAt(c.at)?.title
     const isSide = !lane.isBase && !lane.isCurrent
     const isTip = tipOf.get(c.lane) === c.hash
-    const isCompact = (phase !== undefined && closed.has(phase)) || (isSide && lane.relevance < 1 && !isTip && !tag && !c.refs?.length)
+    // Only a folded phase's commits go without text; a side branch's bare dots lined up with no row.
+    const isCompact = phase !== undefined && closed.has(phase)
     const label = isSide && isTip ? `${lane.branch} · ${lane.why}` : undefined
     list.push({ kind: 'commit', t: floor, o: 1, lane: c.lane, phase, c, tag, isOwn: own.has(c.hash), isCompact, label })
   }
