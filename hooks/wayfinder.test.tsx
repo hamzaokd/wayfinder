@@ -246,6 +246,8 @@ test('the pane: the graph, clicks on it, the dialog, and where actions go', { op
   on('ui.open', () => (opened++, { value: { isPlaced: true } }))
   let closed = 0
   on('ui.close', () => (closed++, { value: undefined }))
+  let redraws = 0
+  on('ui.invalidate', () => (redraws++, { value: undefined }))
   on('ui.status', () => ({ value: undefined }))
   on('ui.toast', () => ({ value: undefined }))
   on('prompt.read', () => ({ value: { text: '', cursor: 0 } }))
@@ -294,9 +296,9 @@ test('the pane: the graph, clicks on it, the dialog, and where actions go', { op
   // /wayfinder turns it on, opens the pane, and the next message asks for the plan so far, once.
   expect(await run('wayfinder')).toContain('asks Claude to record the plan of the work so far')
   expect(opened).toBe(1)
-  // Run again while on: the pane is closed and opened afresh, since a plain open of an open pane changes nothing.
+  // Run again while on: the pane is shown with focus and redrawn, never closed (a reopened pane may never draw).
   expect(await run('wayfinder')).toBe('Wayfinder pane opened.')
-  expect([opened, closed]).toEqual([2, 1])
+  expect([opened, closed, redraws]).toEqual([2, 0, 1])
   await $.prompt.submit({ text: 'go on', wait: false, origin: { kind: 'composer' } })
   expect(seenContext.join('\n')).toContain('The user just turned Wayfinder on in this session.')
   await $.prompt.submit({ text: 'and?', wait: false, origin: { kind: 'composer' } })

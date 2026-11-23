@@ -570,11 +570,12 @@ export const register: Register = (on, opts: PluginOptions) => {
   on('command.run', { command: 'wayfinder' }, async ($, e) => {
     if (e.args.trim()) return { text: T.cmdUsage }
     if (await active($)) {
-      // ui.open on a pane Claude Code still lists as open changes nothing: no redraw, not shown again
-      // (closed in the app without the CLI hearing, or blank there). Close it and open it afresh.
-      await $.ui.close({ id: PANE })
+      // A plain ui.open of a pane Claude Code lists as open changes nothing; focus makes it show again.
+      // Never close and reopen: the desktop app then often never asks the reopened pane to draw.
       const res = await $.ui.open({ id: PANE, title: 'Wayfinder', focus: true })
-      note(`/wayfinder reopened the pane: ${res.isPlaced ? 'placed' : `not placed (${res.reason})`}`)
+      // A pane left blank in the app is asked to draw again.
+      await $.ui.invalidate('ui.render')
+      note(`/wayfinder opened the pane and asked it to redraw: ${res.isPlaced ? 'placed' : `not placed (${res.reason})`}`)
       return { text: T.cmdOpened }
     }
     return { text: (await turnOn($)) ? T.cmdOnAsk : T.cmdOn }
