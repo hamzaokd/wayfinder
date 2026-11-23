@@ -52,7 +52,7 @@ function render(n, hoverScope) {
   if (typeof n === 'string' || typeof n === 'number') return document.createTextNode(String(n));
   const p = n.props || {};
   let el;
-  const kids = (n.children || []);
+  let kids = n.children || [];
   if (n.type === 'Box') {
     el = document.createElement('div');
     el.className = 'box';
@@ -79,7 +79,8 @@ function render(n, hoverScope) {
     el.className = 'button' + (p.plain ? '' : ' boxed') + (p.dimColor ? ' dim' : '');
     el.title = 'press: ' + (p.key || p.label);
     if (p.key) el.addEventListener('click', () => press(p.key));
-    if (!kids.length) el.textContent = p.label;
+    // The desktop app draws a button's label as its text, whatever children it holds.
+    if (p.label) { el.textContent = p.label; el.classList.add("truncate"); kids = []; }
     if (n.hover && hoverScope) scopes.push([hoverScope, el, n.hover]);
   } else if (n.type === 'Svg') {
     el = document.createElement('img');

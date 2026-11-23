@@ -413,7 +413,9 @@ test('the pane: the graph, clicks on it, the dialog, and where actions go', { op
     expect(await graph()).toMatch(/bbbbbbb \n?add writer/)
     if (surface === 'desktop') expect((await ui.find({ type: 'Text', text: /^bbbbbbb $/ }))?.props.color).toBe('#639922')
     // The app draws a button's text in its own color: the hash sits beside it, the dimming is the button's own.
-    if (surface === 'desktop') expect((await ui.findAll({ type: 'Button' })).find(b => String(b.props.label).startsWith('mmmmmmm'))?.props.dimColor).toBe(true)
+    // The app draws a button's label as its text: the hash beside it is not repeated in it.
+    const release = (await ui.findAll({ type: 'Button' })).find(b => String(b.props.label).endsWith('release'))
+    if (surface === 'desktop') expect(release?.props).toMatchObject({ label: '(main) release', dimColor: true })
 
     // A click on a row of the timeline: its text is a button, on every surface.
     const click = async (id: string) => {

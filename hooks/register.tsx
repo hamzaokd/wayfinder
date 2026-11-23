@@ -629,7 +629,8 @@ async function drawPane($: $, e: RenderInput) {
           </Box>
         )}
         {l && id ? (
-          <Button key={`press-${r.name}-${row.key}`} label={l.lead ? `${l.lead} ${l.text}` : l.text} plain dimColor={l.dim} hover={{ underline: true }} onPress={() => void openRow($, id)}>
+          // The app draws the label as the button's text: the lead beside it is not repeated here, the tail is.
+          <Button key={`press-${r.name}-${row.key}`} label={`${l.text}${l.tail ?? ''}`} plain dimColor={l.dim} hover={{ underline: true }} onPress={() => void openRow($, id)}>
             {labelParts(l)}
           </Button>
         ) : (
