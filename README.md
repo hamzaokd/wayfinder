@@ -2,9 +2,9 @@
 
 A Claude Code mod that keeps a pane beside the chat answering "where are we?":
 
-- **Plan**: the session's goal, a "where was I" line, and every step (code or not) marked done, current, blocked or todo, with result notes. Claude keeps it updated through the `mcp__wayfinder__progress` tool the mod adds. You can tick steps yourself in the pane, and Claude is told on your next message.
+- **Plan**: the session's goal, a "where was I" line, and every step (code or not) marked done, current, blocked or todo, with result notes. Claude keeps it updated through the `mcp__wayfinder__progress` tool the mod adds. Until it does, the task list Claude keeps anyway (the desktop app's steps under its messages, or `TodoWrite` in a terminal) shows as the plan, one phase per request, at no token cost. You can tick steps yourself in the pane, and Claude is told on your next message.
 - **Repos**: every git repo the session touched, with live branch, uncommitted changes, commits ahead of the base branch and ahead/behind upstream.
-- **Timeline**: branch switches, commits, finished steps. Commits made outside the session (by you or another session) are flagged, and Claude gets a note about them on your next message. Rewritten history (rebase, reset, amend) is flagged as such.
+- **Timeline**: branch switches, commits, finished steps. Each commit shows its hash in its branch's color, then its age, then its subject; a branch with no commit of its own (main fast-forwarded onto develop) is a name in brackets on its commit, not a lane. Around the plan the graph keeps the 10 newest commits of your branch, 4 of a context branch, at most 30 in all (a setting), plus fork points and joining merges; commits in a plan block are never cut. Stashes show from the last 7 days, on a branch the graph draws. Commits made outside the session (by you or another session) are flagged, and Claude gets a note about them on your next message. Rewritten history (rebase, reset, amend) is flagged as such.
 - **Status strip**: a thin outlined line above the message box, colored by where the work stands: blue working on a step, orange waiting on you or stuck, red blocked, purple off plan (the plan changed this turn, or the current step wasn't in it), green goal reached. Nothing without a plan.
 - **Waiting on you**: a card listing every step, in any session, that waits on you. **Clear** removes one you did outside Claude or no longer care about: it disappears from every pane, and that session's Claude is told on your next message there. In the desktop app, **Open chat ↗** beside another session opens that chat (once that session has run this version: it saves its desktop id when it starts).
 - **Other sessions**: a read-only list of your other sessions where Wayfinder is on, from the last 7 days, with their goal and current step. Only one thing about them reaches Claude: files both sessions edited in the last day, with the other session's goal, once per file, so it checks before touching them.
@@ -41,7 +41,7 @@ Wayfinder is **on in new sessions** (the "turn on in new sessions" setting below
 
 Under the timeline, a dim line estimates what Wayfinder cost in this session (about 4 characters a token): plan updates, notes to Claude, and the plan tool's description, counted once per turn though Claude Code mostly caches it. It counts from this version on.
 
-**Settings** (the pane's folded Settings block, or `/config`, stored in `settings.json` under `pluginConfigs`): turn on in new sessions (default yes; `/wayfinder-off` turns one session off), how many days back other sessions show (7), and how many are listed (8). Other open sessions use a change after `/reload-plugins`.
+**Settings** (the pane's folded Settings block, or `/config`, stored in `settings.json` under `pluginConfigs`): turn on in new sessions (default yes; `/wayfinder-off` turns one session off), how many days back other sessions show (7), how many are listed (8), whether commits show their age (yes), and the most commits a repo's graph shows around the plan (30). Other open sessions use a change after `/reload-plugins`.
 
 The pane speaks French when Claude Code's `language` setting names French (`"language": "french"` in `~/.claude/settings.json`), and English otherwise.
 
@@ -52,7 +52,7 @@ claude plugin validate .
 claude plugin test .
 ```
 
-To see the pane without reloading the mod, run `py dev/preview.py` (a sample session) or `py dev/preview.py --live [session id]` (a real saved session with its real git), then open `dev/preview.html` in a browser. Add `--off` for a session where Wayfinder is off, `--fr` for French. It mounts the pane through the test kit and paints its render tree; phase headers fold and steps show their dialog, as the kit recorded them. Layout logic shows; the app's own fonts and spacing may differ.
+To see the pane without reloading the mod, run `py dev/preview.py` (a sample session) or `py dev/preview.py --live [session id]` (a real saved session with its real git), then open `dev/preview.html` in a browser. Add `--off` for a session where Wayfinder is off, `--fr` for French, and `--ssh <host> --cwd <repo>` to draw another machine's session and repo over ssh (in Git Bash, prefix `MSYS_NO_PATHCONV=1`). It mounts the pane through the test kit and paints its render tree; phase headers fold and steps show their dialog, as the kit recorded them. Layout logic shows; the app's own fonts and spacing may differ.
 
 ## Known limits
 

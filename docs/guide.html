@@ -136,10 +136,13 @@
     <figure data-fig="plans"></figure>
     <ul>
       <li>The work was short. A question, a quick fix or a one-off change doesn't need a plan.</li>
-      <li>Claude skipped it. When a conversation goes on without a plan, Wayfinder reminds Claude once. Claude can ignore the reminder, and sometimes does, even in long conversations with commits.</li>
+      <li>Claude kept no list. Claude's own task list shows as the plan by itself (see below). When Claude keeps none and records no plan either, Wayfinder reminds it once, and Claude can still skip it.</li>
       <li>Wayfinder is off in that conversation. The pane then says so and shows a <span class="btn">Turn on</span> button.</li>
     </ul>
     <div class="card"><strong>No plan where you want one?</strong> Just ask: "record the plan in Wayfinder". Claude writes it from what you have done so far. In a conversation where Wayfinder is off, <code>/wayfinder</code> turns it on and asks Claude for the plan in one go.</div>
+
+    <h3>Claude's task list as the plan</h3>
+    <p>Claude often keeps a task list of its own: the steps under its messages in the desktop app, or its todo list in a terminal. Until Claude records a plan with Wayfinder, the pane shows that list as the plan, under the heading <strong>Task list</strong>, at no token cost. Each new list is a phase, <strong>Request 1</strong>, <strong>Request 2</strong> and so on, one per thing you asked. Steps tick off as Claude moves through the list, and the recap Claude ends its work with becomes <strong>Where we are</strong>. A list that changes is never shown as off plan. Once Claude records a plan of its own (with phases, decisions or steps waiting on you), it replaces the task list for good.</p>
 
     <h3>Keeping it up to date</h3>
     <p>When Claude hasn't touched the plan for a few messages, or commits went in since, the pane shows <strong>Plan is behind</strong> in orange and Claude gets a nudge. You can also tick a step yourself: click it in the timeline and choose <strong>Mark done</strong>.</p>
@@ -177,7 +180,9 @@
         <ul>
           <li><strong>Phase blocks</strong>: an outlined box per phase, blue while current, green once done, dim before it starts. Finished phases start folded.</li>
           <li><strong>Steps</strong>: numbered phase.step ("2.3"). Blue and bold while in progress ("you are here"), red when blocked, dim when done or to do, struck through when dropped. A tag says "waiting on you", "stuck N turns", "dropped" or "not in plan".</li>
-          <li><strong>Commits</strong> in their branch color; commits made elsewhere are flagged. <strong>Decisions</strong>, <strong>stashes</strong>, uncommitted changes and the planned merge into main also show.</li>
+          <li><strong>Commits</strong>: the short hash in its branch's color, then its age (<code>8h</code>, <code>4d</code>), then its subject. A branch's newest commit can show as the branch's name instead, in its color. A branch with no commit of its own (main moved forward onto a commit of develop, say) gets no lane: its name shows in brackets on that commit, as in <code>b437667 (origin/master) fix…</code>. Commits made elsewhere are flagged.</li>
+          <li><strong>Which commits show</strong>: around the plan, the 10 newest on your branch, 4 on a branch shown for context, and no more than the <strong>Show at most N commits per repo</strong> setting in all. Fork points and merges that join two branches stay. Commits in a plan block (made in this session, or while a phase ran) are never cut. <strong>+N older commits not shown</strong> counts the rest, and a branch whose older commits are cut runs up to the top of the graph.</li>
+          <li><strong>Decisions</strong>, <strong>stashes</strong> (from the last 7 days, on a branch the graph shows), uncommitted changes and the planned merge into main also show.</li>
         </ul>
       </li>
       <li><strong>Token cost</strong>, a dim line: what Wayfinder cost in this session (plan updates, notes to Claude, the tool's description), about 4 characters a token.</li>
@@ -188,7 +193,7 @@
     </ol>
 
     <h2 id="en-legend">Timeline legend</h2>
-    <p>The same marks as the pane's <strong>▸ Legend</strong>. Lanes other than your current branch and main each get their own color.</p>
+    <p>The same marks as the pane's <strong>▸ Legend</strong>. Lanes other than your current branch and main each get their own color, and each commit's hash is written in its lane's color.</p>
     <figure data-fig="legend"></figure>
 
     <h2 id="en-strip">Status strip</h2>
@@ -271,6 +276,8 @@
       <li><strong>Turn on in new sessions</strong>: yes by default.</li>
       <li><strong>Other sessions from the last N days</strong>: 7 by default.</li>
       <li><strong>List at most N other sessions</strong>: 8 by default.</li>
+      <li><strong>Show commit ages</strong>: yes by default. No hides the age beside each commit.</li>
+      <li><strong>Show at most N commits per repo</strong>: 30 by default, from 5 to 100. It counts only the commits around the plan: those in a plan block always show.</li>
     </ul>
     <p>Sessions that are already open pick up a change after <code>/reload-plugins</code>.</p>
 
@@ -301,10 +308,13 @@
     <figure data-fig="plans"></figure>
     <ul>
       <li>Le travail était court. Une question, une petite correction ou un changement ponctuel n’ont pas besoin de plan.</li>
-      <li>Claude l’a oublié. Quand une conversation avance sans plan, Wayfinder le rappelle une fois à Claude. Claude peut ignorer ce rappel, et ça arrive, même dans une longue conversation avec des commits.</li>
+      <li>Claude n’a tenu aucune liste. La liste de tâches de Claude s’affiche d’elle-même comme plan (voir plus bas). Quand Claude n’en tient pas et ne note pas de plan non plus, Wayfinder le lui rappelle une fois, et Claude peut quand même passer outre.</li>
       <li>Wayfinder est désactivé dans cette conversation. Le panneau le dit alors et propose un bouton <span class="btn">Activer</span>.</li>
     </ul>
     <div class="card"><strong>Pas de plan là où tu en voudrais un ?</strong> Demande-le simplement : « note le plan dans Wayfinder ». Claude l’écrit à partir de ce qui a déjà été fait. Dans une conversation où Wayfinder est désactivé, <code>/wayfinder</code> l’active et demande le plan à Claude en une fois.</div>
+
+    <h3>La liste de tâches de Claude comme plan</h3>
+    <p>Claude tient souvent sa propre liste de tâches : les étapes sous ses messages dans l’app de bureau, ou sa liste de choses à faire dans un terminal. Tant que Claude n’a pas noté de plan avec Wayfinder, le panneau affiche cette liste comme plan, sous le titre <strong>Liste des tâches</strong>, sans coût en tokens. Chaque nouvelle liste est une phase, <strong>Demande 1</strong>, <strong>Demande 2</strong>, etc., une par chose demandée. Les étapes se cochent à mesure que Claude avance dans la liste, et le récapitulatif qui clôt son travail devient <strong>Où on en est</strong>. Une liste qui change n’est jamais affichée comme hors plan. Dès que Claude note son propre plan (avec des phases, des décisions ou des étapes qui t’attendent), il remplace la liste pour de bon.</p>
 
     <h3>Le garder à jour</h3>
     <p>Quand Claude n’a pas touché au plan depuis quelques messages, ou que des commits sont arrivés depuis, le panneau affiche <strong>Plan en retard</strong> en orange et Claude reçoit un rappel. Tu peux aussi cocher une étape toi-même : clique dessus dans la frise et choisis <strong>Marquer faite</strong>.</p>
@@ -342,7 +352,9 @@
         <ul>
           <li><strong>Blocs de phase</strong> : un cadre par phase, bleu pendant qu’elle est en cours, vert une fois faite, pâle avant de commencer. Les phases finies sont repliées au départ.</li>
           <li><strong>Étapes</strong> : numérotées phase.étape (« 2.3 »). Bleues et en gras en cours (« tu es ici »), rouges si bloquées, pâles si faites ou à faire, barrées si abandonnées. Une étiquette indique « attend ta réponse », « bloquée depuis N tours », « abandonnée » ou « hors plan ».</li>
-          <li><strong>Commits</strong> dans la couleur de leur branche ; ceux faits ailleurs sont signalés. Les <strong>décisions</strong>, les <strong>stashs</strong>, les modifications pas commitées et la fusion prévue dans main apparaissent aussi.</li>
+          <li><strong>Commits</strong> : le hash court dans la couleur de sa branche, puis son âge (<code>8h</code>, <code>4j</code>), puis son sujet. Le commit le plus récent d’une branche peut s’afficher sous le nom de la branche, dans sa couleur. Une branche sans commit à elle (main avancé sur un commit de develop, par exemple) n’a pas de couloir : son nom s’affiche entre parenthèses sur ce commit, comme <code>b437667 (origin/master) fix…</code>. Les commits faits ailleurs sont signalés.</li>
+          <li><strong>Quels commits s’affichent</strong> : autour du plan, les 10 plus récents de ta branche, 4 sur une branche montrée pour le contexte, et pas plus que le réglage <strong>Afficher au plus N commits par dépôt</strong> en tout. Les points de départ et les fusions qui relient deux branches restent. Les commits d’un bloc du plan (faits dans cette session, ou pendant qu’une phase était en cours) ne sont jamais coupés. <strong>+N commits plus anciens masqués</strong> compte le reste, et une branche dont les anciens commits sont coupés monte jusqu’en haut du graphe.</li>
+          <li>Les <strong>décisions</strong>, les <strong>stashs</strong> (des 7 derniers jours, sur une branche que le graphe montre), les modifications pas commitées et la fusion prévue dans main apparaissent aussi.</li>
         </ul>
       </li>
       <li><strong>Coût en tokens</strong>, une ligne pâle : ce que Wayfinder a coûté dans cette session (mises à jour du plan, notes à Claude, description de l’outil), environ 4 caractères par token.</li>
@@ -353,7 +365,7 @@
     </ol>
 
     <h2 id="fr-legend">Légende de la frise</h2>
-    <p>Les mêmes repères que la <strong>▸ Légende</strong> du panneau. Les branches autres que ta branche actuelle et main ont chacune leur couleur.</p>
+    <p>Les mêmes repères que la <strong>▸ Légende</strong> du panneau. Les branches autres que ta branche actuelle et main ont chacune leur couleur, et le hash de chaque commit est écrit dans la couleur de sa branche.</p>
     <figure data-fig="legend"></figure>
 
     <h2 id="fr-strip">Bandeau d’état</h2>
@@ -436,6 +448,8 @@
       <li><strong>Activer dans les nouvelles sessions</strong> : oui par défaut.</li>
       <li><strong>Autres sessions des N derniers jours</strong> : 7 par défaut.</li>
       <li><strong>Lister au plus N autres sessions</strong> : 8 par défaut.</li>
+      <li><strong>Afficher l’âge des commits</strong> : oui par défaut. Non masque l’âge à côté de chaque commit.</li>
+      <li><strong>Afficher au plus N commits par dépôt</strong> : 30 par défaut, de 5 à 100. Il ne compte que les commits autour du plan : ceux d’un bloc du plan s’affichent toujours.</li>
     </ul>
     <p>Les sessions déjà ouvertes prennent un changement en compte après <code>/reload-plugins</code>.</p>
 
