@@ -95,7 +95,8 @@ export function items(v: GraphView): { list: Item[]; lanes: Lane[]; current: num
     const isTip = tipOf.get(c.lane) === c.hash
     // Only a folded phase's commits go without text; a side branch's bare dots lined up with no row.
     const isCompact = phase !== undefined && closed.has(phase)
-    const label = isSide && isTip ? `${lane.branch} · ${lane.why}` : undefined
+    // A side branch's tip row names the branch (drawn as the row's lead) and why it is shown.
+    const label = isSide && isTip ? `· ${lane.why}` : undefined
     list.push({ kind: 'commit', t: floor, o: 1, lane: c.lane, phase, c, tag, isOwn: own.has(c.hash), isCompact, label })
   }
 
@@ -185,7 +186,11 @@ export function stepTag(v: GraphView, s: Step): { text: string; isAlert: boolean
 }
 
 /** The text of a timeline row, drawn natively beside its slice of the lanes. `id` makes it clickable. */
-/** `lead`: a commit's hash, drawn first in its branch's color (`leadColor`), so a commit names its branch. */
+/**
+ * `lead`: a commit's hash, or a branch tip's name, drawn first in its branch's color (`leadColor`) so a
+ * row names its branch. The pane draws it beside the row's button: the app draws a button's text in its
+ * own color, dropping a Text's color and dim inside it.
+ */
 export type RowLabel = { lead?: string; leadColor?: string; text: string; tail?: string; color?: 'success' | 'suggestion' | 'error' | 'warning' | `#${string}`; tailColor?: 'warning'; dim?: boolean; mono?: boolean; strike?: boolean; bold?: boolean; id?: string }
 
 export function rowLabel(v: GraphView, it: Item): RowLabel | undefined {
@@ -197,7 +202,7 @@ export function rowLabel(v: GraphView, it: Item): RowLabel | undefined {
     const lane = v.repo.graph?.lanes[it.lane]
     const color = lane && laneColor(lane, it.lane)
     // A branch's tip row names the branch, in its color; other commits lead with their hash in it.
-    if (it.label) return { text: it.label, tail, color: color as `#${string}`, dim: false, id: rowKey(it) }
+    if (it.label) return { lead: lane?.branch, leadColor: color, text: it.label, tail, dim: true, id: rowKey(it) }
     return { lead: it.c.hash.slice(0, 7), leadColor: color, text: refs + it.c.subject, tail, mono: true, color: it.tag ? 'warning' : undefined, dim: !it.isOwn && !it.tag, id: rowKey(it) }
   }
   if (it.kind === 'step') {

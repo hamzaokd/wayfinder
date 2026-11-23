@@ -15,6 +15,9 @@
   .text { white-space: pre-wrap; min-width: 0; }
   .truncate { white-space: pre; overflow: hidden; text-overflow: ellipsis; }
   .text .text { white-space: inherit; } /* an inline run follows its Text's wrapping */
+  /* The desktop app draws a button's text in the button's own color: a Text's color and dim inside it are dropped. */
+  .button .text { color: inherit !important; }
+  .button.dim { color: var(--dim); }
   .button { cursor: pointer; display: inline-flex; min-width: 0; }
   .button.boxed { border: 1px solid var(--border); border-radius: 6px; padding: 2px 8px; }
   img { display: block; flex: none; }
@@ -73,7 +76,7 @@ function render(n, hoverScope) {
     textStyle(el, p);
   } else if (n.type === 'Button') {
     el = document.createElement('span');
-    el.className = 'button' + (p.plain ? '' : ' boxed');
+    el.className = 'button' + (p.plain ? '' : ' boxed') + (p.dimColor ? ' dim' : '');
     el.title = 'press: ' + (p.key || p.label);
     if (p.key) el.addEventListener('click', () => press(p.key));
     if (!kids.length) el.textContent = p.label;

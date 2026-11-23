@@ -214,7 +214,7 @@ test('the graph puts steps on their branch, folds finished phases, and plans the
     'merge',
   ])
   const g = graphLanes(view)
-  const shown = g.rows.map(r => (r.label ? `${r.label.text}${r.label.tail ?? ''}` : '·'))
+  const shown = g.rows.map(r => (r.label ? `${r.label.lead ? `${r.label.lead} ` : ''}${r.label.text}${r.label.tail ?? ''}` : '·'))
   expect(shown).toContain('▸ 1 Investigate · 1 step done · 1 commit')
   expect(shown).toContain('▾ 2 Build · step 1 of 1')
   expect(shown).toContain('2.1 Writer · you are here')
@@ -409,6 +409,8 @@ test('the pane: the graph, clicks on it, the dialog, and where actions go', { op
     // A commit leads with its hash; with lanes drawn, in its branch's color.
     expect(await graph()).toMatch(/bbbbbbb \n?add writer/)
     if (surface === 'desktop') expect((await ui.find({ type: 'Text', text: /^bbbbbbb $/ }))?.props.color).toBe('#639922')
+    // The app draws a button's text in its own color: the hash sits beside it, the dimming is the button's own.
+    if (surface === 'desktop') expect((await ui.findAll({ type: 'Button' })).find(b => String(b.props.label).startsWith('mmmmmmm'))?.props.dimColor).toBe(true)
 
     // A click on a row of the timeline: its text is a button, on every surface.
     const click = async (id: string) => {
