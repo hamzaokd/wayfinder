@@ -1,8 +1,8 @@
 import type { On } from 'claude-code'
 import { expect, mock, test } from 'claude-code/testing'
 
-import type { RepoLive } from '../types'
-import { dropEmptyLanes, GIT, recentStashes } from './gitgraph'
+import type { Lane, RepoLive } from '../types'
+import { claimLanes, dropEmptyLanes, GIT, recentStashes } from './gitgraph'
 import { graphLanes, graphText, items } from './graph'
 import { applyCleared, applyPlan, attributeEdits, chatStatus, clearKey, dirsFromToolUse, emptyTrail, normPath, PROGRESS_TOOL, quoted, rebuildFromHistory, sharedFiles, sinceYouLeft, stepMenu, waitingOnYou } from './lib'
 import { langOf, setLang } from './i18n'
@@ -161,7 +161,24 @@ test('a branch with no commit of its own gets no lane: its name goes on its tip 
   expect(commits.map(c => c.lane)).toEqual([0, 1, 2])
 })
 
-test('commits keep git order over their dates; a commit leads with its hash in its branch color', () => {
+test('a branch only behind another is a name on its commit, not a lane that seems to fork there', () => {
+  // master was fast-forwarded to M2 on develop; analytics (A) was carried on by library (L).
+  const lanes: Lane[] = [
+    { branch: 'origin/master', relevance: 1, why: 'base', isBase: true, tip: H('2') },
+    { branch: 'develop', relevance: 1, why: 'current', isCurrent: true, tip: H('d') },
+    { branch: 'analytics', relevance: 0.55, why: 'recent', tip: H('a') },
+    { branch: 'library', relevance: 0.55, why: 'recent', tip: H('l') },
+  ]
+  const c = (h: string, parents: string[]) => ({ hash: H(h), parents: parents.map(H), at: 0, subject: h, lane: -1 })
+  const commits = [c('d', ['2']), c('l', ['a']), c('2', ['1']), c('a', ['1']), c('1', [])]
+  claimLanes(lanes, commits)
+  const refs = dropEmptyLanes(lanes, commits)
+  expect(lanes.map(l => `${l.branch}${l.forkFrom ? `<${l.forkFrom[0]}` : ''}`)).toEqual(['develop', 'library<1'])
+  expect(commits.map(x => `${x.subject}@${x.lane}`)).toEqual(['d@0', 'l@1', '2@0', 'a@1', '1@0'])
+  expect([...refs]).toEqual([[H('2'), ['origin/master']], [H('a'), ['analytics']]])
+})
+
+test('commits keep git order over their dates; a commit leads with its hash in its branch color, then its names', () => {
   const base = live()
   // A rebased commit dated before its parent still comes after it.
   const commits = [
@@ -170,9 +187,8 @@ test('commits keep git order over their dates; a commit leads with its hash in i
   ]
   const view = { trail: emptyTrail('s1', 0), repo: { ...base, dirty: 0, graph: { ...base.graph!, stashes: [], commits } }, isPrimary: true, expanded: {}, now: 500, ownerOf: new Map<string, string>() }
   expect(items(view).list.flatMap(i => (i.kind === 'commit' ? [i.c.subject] : []))).toEqual(['release', 'rebased'])
-  const row = graphLanes(view).rows.find(r => r.label?.text === 'rebased')!
-  expect(row.label).toMatchObject({ lead: 'bbbbbbb', leadColor: '#639922' })
-  expect(row.label!.tail).toContain('fix/done')
+  const row = graphLanes(view).rows.find(r => r.label?.text.endsWith('rebased'))!
+  expect(row.label).toMatchObject({ lead: 'bbbbbbb', leadColor: '#639922', text: '(fix/done) rebased' })
 })
 
 test('the graph puts steps on their branch, folds finished phases, and plans the merge', () => {

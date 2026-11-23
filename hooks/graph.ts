@@ -93,7 +93,7 @@ export function items(v: GraphView): { list: Item[]; lanes: Lane[]; current: num
     const phase = phaseAt(c.at)?.title
     const isSide = !lane.isBase && !lane.isCurrent
     const isTip = tipOf.get(c.lane) === c.hash
-    const isCompact = (phase !== undefined && closed.has(phase)) || (isSide && lane.relevance < 1 && !isTip && !tag)
+    const isCompact = (phase !== undefined && closed.has(phase)) || (isSide && lane.relevance < 1 && !isTip && !tag && !c.refs?.length)
     const label = isSide && isTip ? `${lane.branch} · ${lane.why}` : undefined
     list.push({ kind: 'commit', t: floor, o: 1, lane: c.lane, phase, c, tag, isOwn: own.has(c.hash), isCompact, label })
   }
@@ -139,8 +139,9 @@ export function items(v: GraphView): { list: Item[]; lanes: Lane[]; current: num
   }
 
   const hasFuture = steps.some(({ s }) => s.status === 'todo')
-  const base = lanes.find(l => l.isBase)
-  if (hasFuture && base && !lanes[current]?.isBase && v.isPrimary) list.push({ kind: 'merge', t: Infinity, o: 1e9, lane: current, into: base.branch })
+  // The base may have no lane: only behind this branch, it is a name on one of its commits.
+  const into = lanes.find(l => l.isBase)?.branch ?? repo.base
+  if (hasFuture && into && !lanes[current]?.isBase && into.replace(/^origin\//, '') !== repo.branch && v.isPrimary) list.push({ kind: 'merge', t: Infinity, o: 1e9, lane: current, into })
 
   list.sort((a, b) => a.t - b.t || a.o - b.o)
   // Each phase's rows stay together, and phases keep the plan's order: phases that overlap in
@@ -189,13 +190,14 @@ export type RowLabel = { lead?: string; leadColor?: string; text: string; tail?:
 export function rowLabel(v: GraphView, it: Item): RowLabel | undefined {
   if (it.kind === 'commit') {
     if (it.isCompact) return undefined
-    const refs = it.c.refs?.length ? ` · ${it.c.refs.join(', ')}` : ''
+    // Branch names right after the hash, as git log --decorate puts them: at the end they were cut off.
+    const refs = it.c.refs?.length ? `(${it.c.refs.join(', ')}) ` : ''
     const tail = it.tag && !it.label ? ` · ${it.tag} · ${ago(v.now - it.c.at)}` : it.isOwn || it.label ? ` · ${ago(v.now - it.c.at)}` : undefined
     const lane = v.repo.graph?.lanes[it.lane]
     const color = lane && laneColor(lane, it.lane)
     // A branch's tip row names the branch, in its color; other commits lead with their hash in it.
     if (it.label) return { text: it.label, tail, color: color as `#${string}`, dim: false, id: rowKey(it) }
-    return { lead: it.c.hash.slice(0, 7), leadColor: color, text: it.c.subject, tail: refs + (tail ?? '') || undefined, mono: true, color: it.tag ? 'warning' : undefined, dim: !it.isOwn && !it.tag, id: rowKey(it) }
+    return { lead: it.c.hash.slice(0, 7), leadColor: color, text: refs + it.c.subject, tail, mono: true, color: it.tag ? 'warning' : undefined, dim: !it.isOwn && !it.tag, id: rowKey(it) }
   }
   if (it.kind === 'step') {
     const s = it.s
@@ -345,7 +347,9 @@ export function graphLanes(v: GraphView, seen?: ReadonlySet<string>): { width: n
         row.push(it.state === 'current' ? `<circle cx="${x}" cy="${y}" r="7.5" class="doing-ring"/><circle cx="${x}" cy="${y}" r="3" class="doing-fill"/>` : `<circle cx="${x}" cy="${y}" r="6.5" class="todo-ring"/>`)
       }
     } else {
-      const bx = laneX(lanes.findIndex(l => l.isBase))
+      // No base lane: the merge goes on down this one.
+      const bi = lanes.findIndex(l => l.isBase)
+      const bx = bi === -1 ? x : laneX(bi)
       row.push(`<path d="M${x} ${y - 12} C${x} ${y + 4}, ${bx} ${y - 4}, ${bx} ${y + 12}" class="rail-todo" fill="none"/>`)
     }
     // A row's marks reach at most 12 px past its centre (the halo).

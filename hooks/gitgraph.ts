@@ -160,17 +160,7 @@ export async function repoGraph($: $, live: RepoLive, ctx: GraphCtx): Promise<Re
     const [hash = '', parents = '', at = '0', ...subject] = l.split('\t')
     return { hash, parents: parents.split(' ').filter(Boolean), at: Number(at) * 1000, subject: subject.join('\t'), lane: -1 }
   })
-  const byHash = new Map(all.map(c => [c.hash, c]))
-  // Each lane claims its first-parent line until it meets one already claimed.
-  lanes.forEach((lane, i) => {
-    let c = byHash.get(lane.tip)
-    while (c && c.lane === -1) {
-      c.lane = i
-      c = c.parents[0] ? byHash.get(c.parents[0]) : undefined
-    }
-    if (c) lane.forkFrom = c.hash
-  })
-
+  claimLanes(lanes, all)
   const refsOf = dropEmptyLanes(lanes, all)
 
   // Keep the graph short: the newest commits of each lane, plus every fork point and named commit.
@@ -200,14 +190,45 @@ export async function repoGraph($: $, live: RepoLive, ctx: GraphCtx): Promise<Re
 }
 
 /**
- * A side branch whose tip already sits on another lane has no commit of its own: it gets no lane (an
- * empty one drew a line from nowhere) and its name goes on that commit. Removes those lanes from
- * `lanes`, renumbers the commits' lanes, and returns tip hash -> branch names.
+ * Each lane claims its first-parent line until it meets one already claimed (sets `c.lane` and the
+ * lane's `forkFrom`). The current branch claims first: it is this work. Then a branch claims before
+ * every branch whose tip it contains: a branch that is only behind another, as master fast-forwarded
+ * to a commit of develop, has no commit of its own and must not look like the other forked from it.
+ */
+export function claimLanes(lanes: Lane[], commits: GraphCommit[]): void {
+  const byHash = new Map(commits.map(c => [c.hash, c]))
+  const tips = lanes.map(lane => {
+    const seen = new Set<string>()
+    const todo = [lane.tip]
+    for (let h = todo.pop(); h !== undefined; h = todo.pop()) {
+      if (seen.has(h)) continue
+      seen.add(h)
+      todo.push(...(byHash.get(h)?.parents ?? []))
+    }
+    // How many other lanes' tips this one holds: more first is an order where a holder claims before what it holds.
+    return lanes.filter(o => o !== lane && seen.has(o.tip)).length
+  })
+  const order = lanes.map((_, i) => i).sort((a, b) => Number(!!lanes[b]!.isCurrent) - Number(!!lanes[a]!.isCurrent) || tips[b]! - tips[a]! || a - b)
+  for (const i of order) {
+    const lane = lanes[i]!
+    let c = byHash.get(lane.tip)
+    while (c && c.lane === -1) {
+      c.lane = i
+      c = c.parents[0] ? byHash.get(c.parents[0]) : undefined
+    }
+    if (c) lane.forkFrom = c.hash
+  }
+}
+
+/**
+ * A branch whose tip already sits on another lane (the base too) has no commit of its own: it gets no
+ * lane (an empty one drew a line from nowhere) and its name goes on that commit. Removes those lanes
+ * from `lanes`, renumbers the commits' lanes, and returns tip hash -> branch names.
  */
 export function dropEmptyLanes(lanes: Lane[], commits: GraphCommit[]): Map<string, string[]> {
   const refsOf = new Map<string, string[]>()
   const drawn = lanes.filter((lane, i) => {
-    const isEmpty = !lane.isBase && !lane.isCurrent && !commits.some(c => c.lane === i)
+    const isEmpty = !lane.isCurrent && !commits.some(c => c.lane === i)
     if (isEmpty) refsOf.set(lane.tip, [...(refsOf.get(lane.tip) ?? []), lane.branch])
     return !isEmpty
   })
