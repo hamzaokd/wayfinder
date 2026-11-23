@@ -105,6 +105,13 @@ test('waiting on you, and since you left', () => {
   const id = 'local_80ad9ce7-6099-4351-8bbd-dcd8d59d9c50'
   expect(waitingOnYou(self, [{ ...other, hostId: id }])[1]!.link).toBe(`claude://claude.ai/epitaxy/${id}`)
   expect(waitingOnYou(self, [{ ...other, hostId: 'javascript:alert(1)' }])[1]!.link).toBeUndefined()
+  // Same repo first, then two shared goal words, then the rest; order among equals kept.
+  const seen = { 'C:/r': { branch: 'main', heads: {} } }
+  const me = { ...self, goal: 'Export invoices to CSV with totals', seen }
+  const far = { ...other, sessionId: 'far', goal: 'Fix login' }
+  const topic = { ...other, sessionId: 'topic', goal: 'Invoices: CSV totals in the mobile app' }
+  const repo = { ...other, sessionId: 'repo', goal: 'Something else', seen }
+  expect(waitingOnYou(me, [far, topic, repo]).map(w => `${w.sessionId}:${w.related ?? ''}`)).toEqual(['s1:', 'repo:repo', 'topic:topic', 'far:'])
   const back = { ...self, lastPromptAt: 0, events: [{ at: 10, kind: 'commit' as const, origin: 'outside' as const, repo: 'api', text: 'x', hash: 'h' }] }
   expect(sinceYouLeft(back, [other], [], 5 * 60_000)).toBeUndefined()
   const card = sinceYouLeft(back, [other], [{ at: 30 * 60_000, subject: 'WIP' }], 60 * 60_000)!

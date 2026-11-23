@@ -351,7 +351,7 @@ export function sharedFiles(self: Trail, others: readonly Trail[], now: number):
     .filter(o => o.files.length > 0)
 }
 
-export type WaitingItem = { sessionId: string; session: string; isSelf: boolean; step: string; what?: string; link?: string }
+export type WaitingItem = { sessionId: string; session: string; isSelf: boolean; related?: 'repo' | 'topic'; step: string; what?: string; link?: string }
 
 /** Waits the user cleared from a pane, shared by every session: `sessionId\0step title` -> when. */
 export type Cleared = Record<string, number>
@@ -360,12 +360,27 @@ export const clearKey = (sessionId: string, step: string) => `${sessionId}\u0000
 /** The desktop app's link to a session, from its own id; none for a terminal session or an id of another shape. */
 export const sessionLink = (hostId?: string) => (hostId && /^local_[0-9a-f-]{36}$/.test(hostId) ? `claude://claude.ai/epitaxy/${hostId}` : undefined)
 
-/** Every open step, in every session, that waits on the user, less the ones they cleared. */
+// Words too common in goals to say two sessions share a topic (EN and FR).
+const COMMON = new Set('with from into that this make build when then also session sessions plan step steps work avec dans pour plus sans être faire une des les'.split(' '))
+const goalWords = (goal?: string) => new Set((goal ?? '').toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(w => w.length >= 4 && !COMMON.has(w)))
+
+/** How another session relates to this one: a repo both worked in, else two words their goals share. */
+export function relation(self: Trail, o: Trail): 'repo' | 'topic' | undefined {
+  if (Object.keys(o.seen).some(r => r in self.seen)) return 'repo'
+  const mine = goalWords(self.goal)
+  // shortcut: word overlap of the goals, so a topic named in other words is missed; ask the model if that grates.
+  return [...goalWords(o.goal)].filter(w => mine.has(w)).length >= 2 ? 'topic' : undefined
+}
+
+/** Every open step, in every session, that waits on the user, less the ones they cleared. This session first, then same repo, then same topic. */
 export function waitingOnYou(self: Trail, others: readonly Trail[], cleared: Cleared = {}): WaitingItem[] {
-  return [self, ...others].flatMap(t =>
+  const rank = { repo: 0, topic: 1, none: 2 }
+  const rel = new Map(others.map(o => [o, relation(self, o)]))
+  const sorted = [...others].sort((a, b) => rank[rel.get(a) ?? 'none'] - rank[rel.get(b) ?? 'none'])
+  return [self, ...sorted].flatMap(t =>
     t.steps
       .filter(s => isOpen(s) && s.waitingOn === 'you' && !(clearKey(t.sessionId, s.title) in cleared))
-      .map(s => ({ sessionId: t.sessionId, session: t.goal ?? T.noGoal, isSelf: t === self, step: s.title, what: s.waitingFor, link: sessionLink(t.hostId) })),
+      .map(s => ({ sessionId: t.sessionId, session: t.goal ?? T.noGoal, isSelf: t === self, related: rel.get(t), step: s.title, what: s.waitingFor, link: sessionLink(t.hostId) })),
   )
 }
 

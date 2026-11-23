@@ -1,5 +1,5 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, PluginOptions, Register } from 'claude-code'
+import type { EngineInterface, PluginOptions, Register, RenderInput } from 'claude-code'
 
 import type { RepoLive, Seen, Trail, TrailEvent } from '../types'
 import { git, isAncestor, repoGraph, repoRoot, snapshot } from './gitgraph'
@@ -75,6 +75,8 @@ function runsOf(rows: readonly GraphRow[]): GraphRow[][] {
 }
 // Row ids each repo's graph drew last time: what is new on the next draw animates in.
 const drawnRows = new Map<string, Set<string>>()
+// The surface the pane was last asked to draw on: a session with no such note was never asked.
+let drawnOn: string | undefined
 // The last diagnostics, newest last. Saved with the session on each refresh, so a reload keeps them.
 const diag: string[] = []
 const DIAG_KEY = 'diag:'
@@ -524,6 +526,354 @@ async function dismissAway($: $): Promise<void> {
   await save($, cur => ({ ...cur, lastPromptAt: now }))
 }
 
+/** The pane, drawn; the ui.render hook shows what it throws. */
+async function drawPane($: $, e: RenderInput) {
+  if (e.surface !== drawnOn) note(`pane asked to draw on ${(drawnOn = e.surface)}`)
+  const els = $.ui.resolve(e)
+  setLang(await read($, langNow))
+  const { Box, Text, Button } = els
+  // Desktop, editor and mobile draw Svg; the terminal gets the lanes in characters.
+  const Svg = e.surface !== 'terminal' && 'Svg' in els ? els.Svg : undefined
+  const t = await read($, trail)
+  const lives = await read($, repos)
+  const rest = await read($, others)
+  const open = await read($, expanded)
+  const gone = await read($, cleared)
+  const side = await read($, aside)
+  const now = await $.clock.now()
+  const set = await read($, settings)
+  if (!t) return <Text dimColor>{T.starting}</Text>
+  if (!isOn(t, set.autoStart))
+    return (
+      <Box flexDirection="column" gap={1} padding={1}>
+        <Text weight="semibold">{T.off}</Text>
+        <Text dimColor>{T.offHint}</Text>
+        <Box flexDirection="row">
+          <Button key="turn-on" label={T.turnOn} onPress={() => void turnOn($)} />
+        </Box>
+      </Box>
+    )
+  // Listed: other sessions where Wayfinder is on. All of them still count for shared files.
+  const listed = rest.filter(o => isOn(o, set.autoStart)).slice(0, set.maxOthers)
+
+  // A commit another session recorded as its own gets that session's name.
+  const ownerOf = new Map<string, string>()
+  for (const o of rest) for (const ev of o.events) if (ev.kind === 'commit' && ev.origin === 'session' && ev.hash) ownerOf.set(ev.hash, o.goal ?? 'another session')
+
+  const waiting = waitingOnYou(t, listed, gone)
+  const shared = sharedFiles(t, rest, now)
+  const away = sinceYouLeft(t, listed, lives.flatMap(r => r.graph?.stashes ?? []), now)
+  const since = t.turn - t.planTurn
+  // The goal is reached once every step still in the plan is done.
+  const isAchieved = t.steps.some(s => s.status === 'done') && t.steps.every(s => s.status === 'done' || s.status === 'dropped')
+  const isStale = !isAchieved && t.steps.length > 0 && (since >= 3 || (since >= 1 && t.commitsSincePlan > 0))
+  const primary = primaryRoot(t, lives)
+  const cur = currentStep(t.steps)
+  const showOthers = open[OTHERS_KEY] ?? false
+  const showLegend = open[LEGEND_KEY] ?? false
+  const showSettings = open[SETTINGS_KEY] ?? false
+  const stepper = (key: string, label: string, value: number, min: number, max: number, field: 'othersDays' | 'maxOthers') => (
+    <Box flexDirection="row" gap={1}>
+      <Text dimColor>{label}</Text>
+      <Button key={`${key}-less`} variant="secondary" label="−" onPress={() => void setOption($, field, Math.max(min, value - 1))} />
+      <Button key={`${key}-more`} variant="secondary" label="+" onPress={() => void setOption($, field, Math.min(max, value + 1))} />
+    </Box>
+  )
+  const legend = showLegend && Svg ? legendSvg() : undefined
+
+  const labelParts = (l: RowLabel) => [
+    <Text color={l.color} dimColor={l.dim} mono={l.mono} strikethrough={l.strike} weight={l.bold ? 'semibold' : undefined} wrap="truncate">
+      {l.text}
+    </Text>,
+    ...(l.tail ? [<Text color={l.tailColor} dimColor={!l.tailColor} wrap="truncate">{l.tail}</Text>] : []),
+  ]
+
+  const graphOf = (r: RepoLive) => {
+    const view: GraphView = { trail: t, repo: r, isPrimary: r.root === primary, expanded: open, now, ownerOf }
+    if (Svg) {
+      // Each row: its slice of the lane drawing, then its text. Clicks on an Svg never reach a mod; the text takes them.
+      const g = graphLanes(view, drawnRows.get(r.root))
+      drawnRows.set(r.root, new Set(g.rows.map(x => x.key)))
+      const kb = Math.round(g.rows.reduce((n, row) => n + g.slice(row).length, 0) / 1024)
+      note(`drew ${r.name} on ${e.surface}: ${g.rows.length} rows, lanes ${g.width}px wide, ${kb} KB of SVG`)
+      return [
+        <Svg source={g.legend.source} alt={`Branches of ${r.name}`} width={g.legend.width} height={g.legend.height} />,
+        ...(r.graph?.skipped ? [<Text dimColor>{T.olderCommits(r.graph.skipped)}</Text>] : []),
+        // A phase is a block: a native rounded box around its rows. Rows outside any phase get the same
+        // border, unseen, so every row's lanes start at the same x.
+        ...runsOf(g.rows.filter(row => row.height > 0)).map(run => {
+          const state = run[0]!.state
+          return (
+            <Box flexDirection="column" borderStyle="round" borderColor={state ? BLOCK[state] : 'transparent'} borderDimColor={state === 'future'} backgroundColor={state === 'current' ? 'rgba(68,147,248,0.08)' : undefined}>
+              {run.map(row => rowOf(r, g, row))}
+            </Box>
+          )
+        }),
+      ]
+    }
+    return textGraph(r, view)
+  }
+
+  const rowOf = (r: RepoLive, g: ReturnType<typeof graphLanes>, row: GraphRow) => {
+    const l = row.label
+    const id = l?.id
+    return (
+      // Nothing lies over the button: in the app a positioned layer over it took every click.
+      <Box key={`row-${r.name}-${row.key}`} flexDirection="row" alignItems="center">
+        {Svg && <Svg source={g.slice(row)} alt={l?.text ?? 'commit'} width={g.width} height={row.height} />}
+        {l && id ? (
+          <Button key={`press-${r.name}-${row.key}`} label={l.text} plain hover={{ underline: true }} onPress={() => void openRow($, id)}>
+            {labelParts(l)}
+          </Button>
+        ) : (
+          l && <Text wrap="truncate">{labelParts(l)}</Text>
+        )}
+      </Box>
+    )
+  }
+
+  // The terminal: each line that names a step, phase or commit is a button.
+  const textGraph = (r: RepoLive, view: GraphView) =>
+    graphText(view).map((line, i) => {
+      const text = (
+        <Text mono color={line.color} dimColor={line.dim}>
+          {line.text}
+        </Text>
+      )
+      const id = line.id
+      return id ? (
+        <Button key={`line-${r.name}-${i}`} plain onPress={() => void openRow($, id)}>
+          {text}
+        </Button>
+      ) : (
+        text
+      )
+    })
+
+  return (
+    <Box flexDirection="column" gap={1} padding={1}>
+      {waiting.length > 0 && (
+        <Box flexDirection="column" borderStyle="round" borderColor="warning" paddingX={1}>
+          {/* The 15 s tick refreshes this too; the button is for not waiting on it. */}
+          <Box flexDirection="row" gap={1} alignItems="center">
+            <Text weight="semibold" color="warning">{T.waitingOnYou} · {waiting.length}</Text>
+            <Button key="waiting-refresh" variant="secondary" label={T.refreshWaits} onPress={() => void tick($)} />
+          </Box>
+          {/* Grouped by session: its name on one dim line, then a bullet per step, what to do under it. */}
+          {/* Another session's chat opens in the desktop app, once that session has saved its desktop id. */}
+          {[...new Set(waiting.map(w => w.sessionId))].map(id => {
+            const items = waiting.filter(w => w.sessionId === id)
+            const first = items[0]!
+            const link = first.isSelf ? undefined : first.link
+            return (
+            <Box flexDirection="column" marginTop={1}>
+              <Box flexDirection="row" gap={1} alignItems="center">
+                {/* The session reads as the heading, its steps smaller under it. */}
+                <Text weight="semibold" wrap="truncate">
+                  {first.isSelf ? T.thisSession : first.session}
+                </Text>
+                {/* Fixed width: the session's name truncates, not the tag or the button. */}
+                {first.related && (
+                  <Box flexShrink={0}>
+                    <Text size="footnote" color="suggestion">{first.related === 'repo' ? T.sameRepo : T.sameTopic}</Text>
+                  </Box>
+                )}
+                {link && (
+                  <Box flexShrink={0}>
+                    <Button key={`chat-${id}`} variant="secondary" label={T.openChat} onPress={() => void openOutside($, link, T.openChatFailed)} />
+                  </Box>
+                )}
+              </Box>
+              {items.map(w => (
+                  <Box flexDirection="column" paddingLeft={1}>
+                    <Box flexDirection="row" gap={1} alignItems="center">
+                      <Text size="footnote" wrap="truncate">
+                        • {w.step}
+                      </Text>
+                      <Button key={`clear-${clearKey(w.sessionId, w.step)}`} variant="secondary" label={T.clearWait} onPress={() => void clearWait($, w.sessionId, w.step)} />
+                    </Box>
+                    {w.what && (
+                      <Box paddingLeft={2}>
+                        <Text size="footnote" dimColor>{w.what}</Text>
+                      </Box>
+                    )}
+                  </Box>
+                ))}
+            </Box>
+            )
+          })}
+        </Box>
+      )}
+
+      {shared.length > 0 && (
+        <Box flexDirection="column" borderStyle="round" borderColor="warning" paddingX={1}>
+          <Text weight="semibold" color="warning">
+            {T.sharedTitle}
+          </Text>
+          {/* Per session: its goal on one dim line, then the files both edited. */}
+          {shared.map(o => (
+            <Box flexDirection="column" marginTop={1}>
+              <Text dimColor wrap="truncate">
+                {o.session}
+              </Text>
+              <Box paddingLeft={1}>
+                <Text>
+                  • {o.files.slice(0, 6).map(baseName).join(', ')}
+                  {o.files.length > 6 ? ` +${o.files.length - 6}` : ''}
+                </Text>
+              </Box>
+            </Box>
+          ))}
+        </Box>
+      )}
+
+      {away && (
+        <Box flexDirection="column" borderStyle="round" borderColor="suggestion" paddingX={1}>
+          <Text weight="semibold">{T.sinceYouLeft(away.away)}</Text>
+          {away.lines.map(l => (
+            <Text dimColor>· {l}</Text>
+          ))}
+          {away.next && (
+            <Text>
+              {T.next} {away.next}
+            </Text>
+          )}
+          <Box flexDirection="row">
+            <Button key="away-ok" variant="secondary" label={T.gotIt} onPress={() => void dismissAway($)} />
+          </Box>
+        </Box>
+      )}
+
+      <Box flexDirection="column">
+        {/* Each line says what it is: the goal, where the work stands, and whether the plan is behind. */}
+        {t.goal && (
+          <Text size="caption" dimColor={!isAchieved} color={isAchieved ? 'success' : undefined} weight="semibold">
+            {isAchieved ? `${T.goal} · ${T.goalAchieved}` : T.goal}
+          </Text>
+        )}
+        <Text size="heading" weight="semibold" color={isAchieved ? 'success' : undefined}>
+          {t.goal ?? T.noPlan}
+        </Text>
+        {t.whereWasI && (
+          <Text dimColor>
+            <Text weight="semibold">{T.whereWeAre}</Text>
+            {t.whereWasI}
+          </Text>
+        )}
+        {!t.goal && <Text dimColor>{T.planHint}</Text>}
+        {isStale && (
+          <Text color="warning">
+            <Text weight="semibold">{T.planBehind}</Text>
+            {T.lastUpdated(since, t.commitsSincePlan)}
+          </Text>
+        )}
+      </Box>
+
+      {side && (
+        <Box flexDirection="column" borderStyle="round" paddingX={1}>
+          <Text weight="semibold">
+            {side.title}
+            <Text dimColor weight="regular">{T.sideAnswer}</Text>
+          </Text>
+          <Text dimColor={side.isLoading}>{side.isLoading ? T.thinking : side.text}</Text>
+          {!side.isLoading && (
+            <Box flexDirection="row">
+              <Button key="aside-close" variant="secondary" label={T.close} onPress={() => void closeAside($)} />
+            </Box>
+          )}
+        </Box>
+      )}
+
+      {lives.length === 0 && <Text dimColor>{T.noRepo}</Text>}
+      {lives.map(r => (
+        <Box flexDirection="column">
+          <Text weight="semibold">
+            {r.name} · {r.branch}
+            <Text dimColor weight="regular">
+              {r.base && !r.base.endsWith(r.branch) ? T.fromBase(r.base) : ''}
+              {r.behindBase ? T.behind(r.behindBase) : ''}
+              {r.ahead !== undefined ? ` · ↑${r.ahead} ↓${r.behind}` : T.notPushed}
+              {r.graph?.hidden ? T.branchesHidden(r.graph.hidden) : ''}
+            </Text>
+          </Text>
+          <Box flexDirection="column">{graphOf(r)}</Box>
+        </Box>
+      ))}
+
+      {/* What Wayfinder costs in this session: the person asked to see it, as it weighs on/off. */}
+      {(() => {
+        const c = t.cost ?? NO_COST
+        const desc = c.turns * DESC_TOKENS
+        return (
+          <Text size="caption" dimColor>
+            <Text weight="semibold">{T.costLine(kTok(c.plan + c.notes + desc))}</Text>
+            {T.costTail(kTok(c.plan), kTok(c.notes), kTok(desc), c.turns)}
+          </Text>
+        )
+      })()}
+
+      {/* What the shapes and colors mean; folded until asked for. */}
+      {lives.length > 0 && (
+        <Box flexDirection="column">
+          <Box flexDirection="row">
+            <Button key="legend-toggle" plain dimColor label={`${showLegend ? '▾' : '▸'} ${T.legend}`} onPress={() => void togglePhase($, LEGEND_KEY, showLegend)} />
+          </Box>
+          {showLegend && (Svg && legend ? <Svg source={legend.source} alt={T.lgText} width={legend.width} height={legend.height} /> : <Text dimColor>{T.lgText}</Text>)}
+        </Box>
+      )}
+
+      {t.unplannedFiles.length > 0 && (
+        <Text color="warning">
+          {T.unplanned}
+          {t.unplannedFiles.slice(-5).map(baseName).join(', ')}
+          {t.unplannedFiles.length > 5 ? ` +${t.unplannedFiles.length - 5}` : ''}
+        </Text>
+      )}
+
+      {listed.length > 0 && (
+        <Box flexDirection="column">
+          <Box flexDirection="row">
+            <Button key="others-toggle" plain dimColor label={`${showOthers ? '▾' : '▸'} ${T.otherSessions(listed.length)}`} onPress={() => void togglePhase($, OTHERS_KEY, showOthers)} />
+          </Box>
+          {showOthers &&
+            listed.map(o => {
+              const c = currentStep(o.steps)
+              const n = c ? stepNo(o, c) : ''
+              return (
+                <Text dimColor>
+                  {o.goal ?? T.noPlanYet} · {Object.keys(o.seen).map(repoName).join(', ') || T.noRepoShort}
+                  {c ? T.stepNofM(n, c.title) : ''} · {ago(now - o.updatedAt)}
+                </Text>
+              )
+            })}
+        </Box>
+      )}
+
+      {/* The plugin's settings, the same ones settings.json and /config hold; folded until asked for. */}
+      <Box flexDirection="column">
+        <Box flexDirection="row">
+          <Button key="settings-toggle" plain dimColor label={`${showSettings ? '▾' : '▸'} ${T.settings}`} onPress={() => void togglePhase($, SETTINGS_KEY, showSettings)} />
+        </Box>
+        {showSettings && (
+          <Box flexDirection="column" paddingLeft={2}>
+            <Box flexDirection="row" gap={1}>
+              <Text dimColor>{T.setAutoStart}</Text>
+              <Button key="set-autostart" variant="secondary" label={set.autoStart ? T.yes : T.no} onPress={() => void setOption($, 'autoStart', !set.autoStart)} />
+            </Box>
+            {stepper('set-days', T.setDays(set.othersDays), set.othersDays, 1, 60, 'othersDays')}
+            {stepper('set-max', T.setMax(set.maxOthers), set.maxOthers, 1, 30, 'maxOthers')}
+            <Text dimColor size="caption">{T.setNote}</Text>
+          </Box>
+        )}
+      </Box>
+
+      <Box flexDirection="row">
+        <Button key="guide" variant="secondary" label={T.openGuide} onPress={() => void openGuide($)} />
+      </Box>
+    </Box>
+  )
+}
+
 export const register: Register = (on, opts: PluginOptions) => {
   // Validated against the manifest's types before the module loads.
   options = { autoStart: opts.autoStart !== false, othersDays: Number(opts.othersDays), maxOthers: Number(opts.maxOthers) }
@@ -560,7 +910,8 @@ export const register: Register = (on, opts: PluginOptions) => {
     const isActive = await active($)
     if ((await read($, trail))?.isOn === undefined) await save($, cur => ({ ...cur, isOn: isActive }))
     await registerProgress($, isActive)
-    if (isActive) void $.ui.open({ id: PANE, title: 'Wayfinder' })
+    // Unasked, the pane is placed only from 144 columns (110 once opened): below that it stays blank until /wayfinder.
+    if (isActive) void $.ui.open({ id: PANE, title: 'Wayfinder' }).then(res => note(`pane at start: ${res.isPlaced ? 'placed' : `not placed (${res.reason})`}`))
     // Anything that happened while the session was closed counts as outside.
     void tick($)
     $.clock.every(TICK_MS, () => void tick($))
@@ -707,333 +1058,13 @@ export const register: Register = (on, opts: PluginOptions) => {
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const els = $.ui.resolve(e)
-    setLang(await read($, langNow))
-    const { Box, Text, Button } = els
-    // Desktop, editor and mobile draw Svg; the terminal gets the lanes in characters.
-    const Svg = e.surface !== 'terminal' && 'Svg' in els ? els.Svg : undefined
-    const t = await read($, trail)
-    const lives = await read($, repos)
-    const rest = await read($, others)
-    const open = await read($, expanded)
-    const gone = await read($, cleared)
-    const side = await read($, aside)
-    const now = await $.clock.now()
-    const set = await read($, settings)
-    if (!t) return <Text dimColor>{T.starting}</Text>
-    if (!isOn(t, set.autoStart))
-      return (
-        <Box flexDirection="column" gap={1} padding={1}>
-          <Text weight="semibold">{T.off}</Text>
-          <Text dimColor>{T.offHint}</Text>
-          <Box flexDirection="row">
-            <Button key="turn-on" label={T.turnOn} onPress={() => void turnOn($)} />
-          </Box>
-        </Box>
-      )
-    // Listed: other sessions where Wayfinder is on. All of them still count for shared files.
-    const listed = rest.filter(o => isOn(o, set.autoStart)).slice(0, set.maxOthers)
-
-    // A commit another session recorded as its own gets that session's name.
-    const ownerOf = new Map<string, string>()
-    for (const o of rest) for (const ev of o.events) if (ev.kind === 'commit' && ev.origin === 'session' && ev.hash) ownerOf.set(ev.hash, o.goal ?? 'another session')
-
-    const waiting = waitingOnYou(t, listed, gone)
-    const shared = sharedFiles(t, rest, now)
-    const away = sinceYouLeft(t, listed, lives.flatMap(r => r.graph?.stashes ?? []), now)
-    const since = t.turn - t.planTurn
-    // The goal is reached once every step still in the plan is done.
-    const isAchieved = t.steps.some(s => s.status === 'done') && t.steps.every(s => s.status === 'done' || s.status === 'dropped')
-    const isStale = !isAchieved && t.steps.length > 0 && (since >= 3 || (since >= 1 && t.commitsSincePlan > 0))
-    const primary = primaryRoot(t, lives)
-    const cur = currentStep(t.steps)
-    const showOthers = open[OTHERS_KEY] ?? false
-    const showLegend = open[LEGEND_KEY] ?? false
-    const showSettings = open[SETTINGS_KEY] ?? false
-    const stepper = (key: string, label: string, value: number, min: number, max: number, field: 'othersDays' | 'maxOthers') => (
-      <Box flexDirection="row" gap={1}>
-        <Text dimColor>{label}</Text>
-        <Button key={`${key}-less`} variant="secondary" label="−" onPress={() => void setOption($, field, Math.max(min, value - 1))} />
-        <Button key={`${key}-more`} variant="secondary" label="+" onPress={() => void setOption($, field, Math.min(max, value + 1))} />
-      </Box>
-    )
-    const legend = showLegend && Svg ? legendSvg() : undefined
-
-    const labelParts = (l: RowLabel) => [
-      <Text color={l.color} dimColor={l.dim} mono={l.mono} strikethrough={l.strike} weight={l.bold ? 'semibold' : undefined} wrap="truncate">
-        {l.text}
-      </Text>,
-      ...(l.tail ? [<Text color={l.tailColor} dimColor={!l.tailColor} wrap="truncate">{l.tail}</Text>] : []),
-    ]
-
-    const graphOf = (r: RepoLive) => {
-      const view: GraphView = { trail: t, repo: r, isPrimary: r.root === primary, expanded: open, now, ownerOf }
-      if (Svg) {
-        // Each row: its slice of the lane drawing, then its text. Clicks on an Svg never reach a mod; the text takes them.
-        const g = graphLanes(view, drawnRows.get(r.root))
-        drawnRows.set(r.root, new Set(g.rows.map(x => x.key)))
-        note(`drew ${r.name} on ${e.surface}: ${g.rows.length} rows, lanes ${g.width}px wide`)
-        return [
-          <Svg source={g.legend.source} alt={`Branches of ${r.name}`} width={g.legend.width} height={g.legend.height} />,
-          ...(r.graph?.skipped ? [<Text dimColor>{T.olderCommits(r.graph.skipped)}</Text>] : []),
-          // A phase is a block: a native rounded box around its rows. Rows outside any phase get the same
-          // border, unseen, so every row's lanes start at the same x.
-          ...runsOf(g.rows.filter(row => row.height > 0)).map(run => {
-            const state = run[0]!.state
-            return (
-              <Box flexDirection="column" borderStyle="round" borderColor={state ? BLOCK[state] : 'transparent'} borderDimColor={state === 'future'} backgroundColor={state === 'current' ? 'rgba(68,147,248,0.08)' : undefined}>
-                {run.map(row => rowOf(r, g, row))}
-              </Box>
-            )
-          }),
-        ]
-      }
-      return textGraph(r, view)
+    // A throw here left the pane blank with no word why: show it, and keep it for the debug tool.
+    try {
+      return await drawPane($, e)
+    } catch (err) {
+      note(`pane draw failed: ${String(err).slice(0, 300)}`)
+      const { Text } = $.ui.resolve(e)
+      return <Text color="error">{T.drawFailed(String(err).slice(0, 300))}</Text>
     }
-
-    const rowOf = (r: RepoLive, g: ReturnType<typeof graphLanes>, row: GraphRow) => {
-      const l = row.label
-      const id = l?.id
-      return (
-        // Nothing lies over the button: in the app a positioned layer over it took every click.
-        <Box key={`row-${r.name}-${row.key}`} flexDirection="row" alignItems="center">
-          {Svg && <Svg source={g.slice(row)} alt={l?.text ?? 'commit'} width={g.width} height={row.height} />}
-          {l && id ? (
-            <Button key={`press-${r.name}-${row.key}`} label={l.text} plain hover={{ underline: true }} onPress={() => void openRow($, id)}>
-              {labelParts(l)}
-            </Button>
-          ) : (
-            l && <Text wrap="truncate">{labelParts(l)}</Text>
-          )}
-        </Box>
-      )
-    }
-
-    // The terminal: each line that names a step, phase or commit is a button.
-    const textGraph = (r: RepoLive, view: GraphView) =>
-      graphText(view).map((line, i) => {
-        const text = (
-          <Text mono color={line.color} dimColor={line.dim}>
-            {line.text}
-          </Text>
-        )
-        const id = line.id
-        return id ? (
-          <Button key={`line-${r.name}-${i}`} plain onPress={() => void openRow($, id)}>
-            {text}
-          </Button>
-        ) : (
-          text
-        )
-      })
-
-    return (
-      <Box flexDirection="column" gap={1} padding={1}>
-        {waiting.length > 0 && (
-          <Box flexDirection="column" borderStyle="round" borderColor="warning" paddingX={1}>
-            <Text weight="semibold" color="warning">{T.waitingOnYou} · {waiting.length}</Text>
-            {/* Grouped by session: its name on one dim line, then a bullet per step, what to do under it. */}
-            {/* Another session's chat opens in the desktop app, once that session has saved its desktop id. */}
-            {[...new Set(waiting.map(w => w.sessionId))].map(id => {
-              const items = waiting.filter(w => w.sessionId === id)
-              const first = items[0]!
-              const link = first.isSelf ? undefined : first.link
-              return (
-              <Box flexDirection="column" marginTop={1}>
-                <Box flexDirection="row" gap={1} alignItems="center">
-                  {/* The session reads as the heading, its steps smaller under it. */}
-                  <Text weight="semibold" wrap="truncate">
-                    {first.isSelf ? T.thisSession : first.session}
-                  </Text>
-                  {link && <Button key={`chat-${id}`} variant="secondary" label={T.openChat} onPress={() => void openOutside($, link, T.openChatFailed)} />}
-                </Box>
-                {items.map(w => (
-                    <Box flexDirection="column" paddingLeft={1}>
-                      <Box flexDirection="row" gap={1} alignItems="center">
-                        <Text size="footnote" wrap="truncate">
-                          • {w.step}
-                        </Text>
-                        <Button key={`clear-${clearKey(w.sessionId, w.step)}`} variant="secondary" label={T.clearWait} onPress={() => void clearWait($, w.sessionId, w.step)} />
-                      </Box>
-                      {w.what && (
-                        <Box paddingLeft={2}>
-                          <Text size="footnote" dimColor>{w.what}</Text>
-                        </Box>
-                      )}
-                    </Box>
-                  ))}
-              </Box>
-              )
-            })}
-          </Box>
-        )}
-
-        {shared.length > 0 && (
-          <Box flexDirection="column" borderStyle="round" borderColor="warning" paddingX={1}>
-            <Text weight="semibold" color="warning">
-              {T.sharedTitle}
-            </Text>
-            {/* Per session: its goal on one dim line, then the files both edited. */}
-            {shared.map(o => (
-              <Box flexDirection="column" marginTop={1}>
-                <Text dimColor wrap="truncate">
-                  {o.session}
-                </Text>
-                <Box paddingLeft={1}>
-                  <Text>
-                    • {o.files.slice(0, 6).map(baseName).join(', ')}
-                    {o.files.length > 6 ? ` +${o.files.length - 6}` : ''}
-                  </Text>
-                </Box>
-              </Box>
-            ))}
-          </Box>
-        )}
-
-        {away && (
-          <Box flexDirection="column" borderStyle="round" borderColor="suggestion" paddingX={1}>
-            <Text weight="semibold">{T.sinceYouLeft(away.away)}</Text>
-            {away.lines.map(l => (
-              <Text dimColor>· {l}</Text>
-            ))}
-            {away.next && (
-              <Text>
-                {T.next} {away.next}
-              </Text>
-            )}
-            <Box flexDirection="row">
-              <Button key="away-ok" variant="secondary" label={T.gotIt} onPress={() => void dismissAway($)} />
-            </Box>
-          </Box>
-        )}
-
-        <Box flexDirection="column">
-          {/* Each line says what it is: the goal, where the work stands, and whether the plan is behind. */}
-          {t.goal && (
-            <Text size="caption" dimColor={!isAchieved} color={isAchieved ? 'success' : undefined} weight="semibold">
-              {isAchieved ? `${T.goal} · ${T.goalAchieved}` : T.goal}
-            </Text>
-          )}
-          <Text size="heading" weight="semibold" color={isAchieved ? 'success' : undefined}>
-            {t.goal ?? T.noPlan}
-          </Text>
-          {t.whereWasI && (
-            <Text dimColor>
-              <Text weight="semibold">{T.whereWeAre}</Text>
-              {t.whereWasI}
-            </Text>
-          )}
-          {!t.goal && <Text dimColor>{T.planHint}</Text>}
-          {isStale && (
-            <Text color="warning">
-              <Text weight="semibold">{T.planBehind}</Text>
-              {T.lastUpdated(since, t.commitsSincePlan)}
-            </Text>
-          )}
-        </Box>
-
-        {side && (
-          <Box flexDirection="column" borderStyle="round" paddingX={1}>
-            <Text weight="semibold">
-              {side.title}
-              <Text dimColor weight="regular">{T.sideAnswer}</Text>
-            </Text>
-            <Text dimColor={side.isLoading}>{side.isLoading ? T.thinking : side.text}</Text>
-            {!side.isLoading && (
-              <Box flexDirection="row">
-                <Button key="aside-close" variant="secondary" label={T.close} onPress={() => void closeAside($)} />
-              </Box>
-            )}
-          </Box>
-        )}
-
-        {lives.length === 0 && <Text dimColor>{T.noRepo}</Text>}
-        {lives.map(r => (
-          <Box flexDirection="column">
-            <Text weight="semibold">
-              {r.name} · {r.branch}
-              <Text dimColor weight="regular">
-                {r.base && !r.base.endsWith(r.branch) ? T.fromBase(r.base) : ''}
-                {r.behindBase ? T.behind(r.behindBase) : ''}
-                {r.ahead !== undefined ? ` · ↑${r.ahead} ↓${r.behind}` : T.notPushed}
-                {r.graph?.hidden ? T.branchesHidden(r.graph.hidden) : ''}
-              </Text>
-            </Text>
-            <Box flexDirection="column">{graphOf(r)}</Box>
-          </Box>
-        ))}
-
-        {/* What Wayfinder costs in this session: the person asked to see it, as it weighs on/off. */}
-        {(() => {
-          const c = t.cost ?? NO_COST
-          const desc = c.turns * DESC_TOKENS
-          return (
-            <Text size="caption" dimColor>
-              <Text weight="semibold">{T.costLine(kTok(c.plan + c.notes + desc))}</Text>
-              {T.costTail(kTok(c.plan), kTok(c.notes), kTok(desc), c.turns)}
-            </Text>
-          )
-        })()}
-
-        {/* What the shapes and colors mean; folded until asked for. */}
-        {lives.length > 0 && (
-          <Box flexDirection="column">
-            <Box flexDirection="row">
-              <Button key="legend-toggle" plain dimColor label={`${showLegend ? '▾' : '▸'} ${T.legend}`} onPress={() => void togglePhase($, LEGEND_KEY, showLegend)} />
-            </Box>
-            {showLegend && (Svg && legend ? <Svg source={legend.source} alt={T.lgText} width={legend.width} height={legend.height} /> : <Text dimColor>{T.lgText}</Text>)}
-          </Box>
-        )}
-
-        {t.unplannedFiles.length > 0 && (
-          <Text color="warning">
-            {T.unplanned}
-            {t.unplannedFiles.slice(-5).map(baseName).join(', ')}
-            {t.unplannedFiles.length > 5 ? ` +${t.unplannedFiles.length - 5}` : ''}
-          </Text>
-        )}
-
-        {listed.length > 0 && (
-          <Box flexDirection="column">
-            <Box flexDirection="row">
-              <Button key="others-toggle" plain dimColor label={`${showOthers ? '▾' : '▸'} ${T.otherSessions(listed.length)}`} onPress={() => void togglePhase($, OTHERS_KEY, showOthers)} />
-            </Box>
-            {showOthers &&
-              listed.map(o => {
-                const c = currentStep(o.steps)
-                const n = c ? stepNo(o, c) : ''
-                return (
-                  <Text dimColor>
-                    {o.goal ?? T.noPlanYet} · {Object.keys(o.seen).map(repoName).join(', ') || T.noRepoShort}
-                    {c ? T.stepNofM(n, c.title) : ''} · {ago(now - o.updatedAt)}
-                  </Text>
-                )
-              })}
-          </Box>
-        )}
-
-        {/* The plugin's settings, the same ones settings.json and /config hold; folded until asked for. */}
-        <Box flexDirection="column">
-          <Box flexDirection="row">
-            <Button key="settings-toggle" plain dimColor label={`${showSettings ? '▾' : '▸'} ${T.settings}`} onPress={() => void togglePhase($, SETTINGS_KEY, showSettings)} />
-          </Box>
-          {showSettings && (
-            <Box flexDirection="column" paddingLeft={2}>
-              <Box flexDirection="row" gap={1}>
-                <Text dimColor>{T.setAutoStart}</Text>
-                <Button key="set-autostart" variant="secondary" label={set.autoStart ? T.yes : T.no} onPress={() => void setOption($, 'autoStart', !set.autoStart)} />
-              </Box>
-              {stepper('set-days', T.setDays(set.othersDays), set.othersDays, 1, 60, 'othersDays')}
-              {stepper('set-max', T.setMax(set.maxOthers), set.maxOthers, 1, 30, 'maxOthers')}
-              <Text dimColor size="caption">{T.setNote}</Text>
-            </Box>
-          )}
-        </Box>
-
-        <Box flexDirection="row">
-          <Button key="guide" variant="secondary" label={T.openGuide} onPress={() => void openGuide($)} />
-        </Box>
-      </Box>
-    )
   })
 }

@@ -59,6 +59,7 @@ function render(n, hoverScope) {
     if (p.paddingY != null) el.style.paddingTop = el.style.paddingBottom = p.paddingY * CELL + 'px';
     if (p.alignItems) el.style.alignItems = p.alignItems;
     if (p.flexGrow != null) el.style.flexGrow = p.flexGrow;
+    if (p.flexShrink != null) el.style.flexShrink = p.flexShrink;
     if (p.position) el.style.position = p.position;
     for (const k of ['top', 'left', 'right', 'bottom']) if (p[k] != null) el.style[k] = p[k] * CELL + 'px';
     if (p.backgroundColor) el.style.background = color(p.backgroundColor);
