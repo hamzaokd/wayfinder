@@ -8,7 +8,8 @@ type $ = EngineInterface
 
 const RECENT_MS = 7 * 86_400_000
 const MAX_OTHER_LANES = 4
-const MAX_PER_LANE = 25
+// Up to 6 lanes: 25 each made 130-row panes the desktop app left blank.
+const MAX_PER_LANE = 10
 const BASE_KEEP = 5
 
 // Answers that only change when a tip moves: keyed by the hashes involved.

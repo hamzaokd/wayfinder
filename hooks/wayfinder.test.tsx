@@ -187,6 +187,10 @@ test('the graph puts steps on their branch, folds finished phases, and plans the
   const docs = again.rows.find(r => r.key.includes('Docs'))!
   expect(again.slice(docs).match(/class="enter"/g)?.length).toBe(1)
   expect(again.rows.filter(r => again.slice(r).includes('class="enter"'))).toEqual([docs])
+  // A row's style holds the colors and only the rules its own shapes use (130 rows of the whole block blanked the pane).
+  expect(g.legend.source).toContain('.legend {')
+  expect(g.slice(second)).toContain('--done:')
+  expect(g.slice(second)).not.toContain('.legend {')
   expect(graphText(view).some(l => l.text.includes('◉ 2.1 Writer · you are here'))).toBe(true)
 
   // A click folds or unfolds one phase.

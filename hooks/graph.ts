@@ -214,26 +214,34 @@ export type GraphRow = { key: string; top: number; height: number; label?: RowLa
 const ROW_H = 26
 const COMPACT_H = 10
 
-const STYLE = `<style>
+// Each row's drawing is its own image, so each carries its own style: the colors, and only the rules it
+// uses. The whole block in every row made a 130-row pane 286 KB, which the desktop app left blank.
+const ROOT_STYLE = `
   :root { --muted:#6e7781; --line:#d0d7de; --done:#1a7f37; --doing:#0969da; --halo:rgba(9,105,218,.15); --blocked:#cf222e; --bg:#ffffff; --stash:#6e59c9; --decision:#0f7a6a; }
-  @media (prefers-color-scheme: dark) { :root { --muted:#8d96a0; --line:#3d444d; --done:#3fb950; --doing:#4493f8; --halo:rgba(68,147,248,.2); --blocked:#f85149; --bg:#0d1117; --stash:#a08cf0; --decision:#3cc7a8; } }
-  .rail-todo { stroke: var(--line); stroke-width: 2.5; stroke-dasharray: 4 4; }
-  .done-fill { fill: var(--done); } .doing-ring { fill: var(--bg); stroke: var(--doing); stroke-width: 2.5; }
-  .doing-fill { fill: var(--doing); } .halo { fill: var(--halo); } .blocked-fill { fill: var(--blocked); }
-  .todo-ring { fill: var(--bg); stroke: var(--muted); stroke-width: 2; }
-  .diamond-open { fill: var(--bg); stroke: #EF9F27; stroke-width: 2.5; }
-  .check { stroke: #fff; stroke-width: 2; fill: none; stroke-linecap: round; stroke-linejoin: round; }
-  .dirty { fill: none; stroke: var(--doing); stroke-width: 1.5; stroke-dasharray: 2 2; }
-  .stash { fill: var(--bg); stroke: var(--stash); stroke-width: 1.5; } .stash-line { stroke: var(--stash); stroke-width: 1; }
-  .decision { fill: var(--bg); stroke: var(--decision); stroke-width: 1.5; }
-  .legend { font-size: 11px; fill: var(--muted); }
-  @keyframes enter { from { opacity: 0; transform: translateX(-6px); } to { opacity: 1; transform: none; } }
-  .enter { animation: enter .45s ease-out both; }
-  @media (prefers-reduced-motion: reduce) { .enter { animation: none; } }
-</style>`
+  @media (prefers-color-scheme: dark) { :root { --muted:#8d96a0; --line:#3d444d; --done:#3fb950; --doing:#4493f8; --halo:rgba(68,147,248,.2); --blocked:#f85149; --bg:#0d1117; --stash:#a08cf0; --decision:#3cc7a8; } }`
+const RULES: [cls: string, css: string][] = [
+  ['rail-todo', '.rail-todo { stroke: var(--line); stroke-width: 2.5; stroke-dasharray: 4 4; }'],
+  ['done-fill', '.done-fill { fill: var(--done); }'],
+  ['doing-ring', '.doing-ring { fill: var(--bg); stroke: var(--doing); stroke-width: 2.5; }'],
+  ['doing-fill', '.doing-fill { fill: var(--doing); }'],
+  ['halo', '.halo { fill: var(--halo); }'],
+  ['blocked-fill', '.blocked-fill { fill: var(--blocked); }'],
+  ['todo-ring', '.todo-ring { fill: var(--bg); stroke: var(--muted); stroke-width: 2; }'],
+  ['diamond-open', '.diamond-open { fill: var(--bg); stroke: #EF9F27; stroke-width: 2.5; }'],
+  ['check', '.check { stroke: #fff; stroke-width: 2; fill: none; stroke-linecap: round; stroke-linejoin: round; }'],
+  ['dirty', '.dirty { fill: none; stroke: var(--doing); stroke-width: 1.5; stroke-dasharray: 2 2; }'],
+  ['stash', '.stash { fill: var(--bg); stroke: var(--stash); stroke-width: 1.5; }'],
+  ['stash-line', '.stash-line { stroke: var(--stash); stroke-width: 1; }'],
+  ['decision', '.decision { fill: var(--bg); stroke: var(--decision); stroke-width: 1.5; }'],
+  ['legend', '.legend { font-size: 11px; fill: var(--muted); }'],
+  ['enter', '@keyframes enter { from { opacity: 0; transform: translateX(-6px); } to { opacity: 1; transform: none; } }'],
+  ['enter', '.enter { animation: enter .45s ease-out both; }'],
+  ['enter', '@media (prefers-reduced-motion: reduce) { .enter { animation: none; } }'],
+]
+const styleFor = (body: string) => `<style>${ROOT_STYLE}${RULES.filter(([c]) => body.includes(c)).map(([, css]) => ' ' + css).join('')}</style>`
 
 const svgDoc = (y: number, w: number, h: number, body: string) =>
-  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 ${y} ${w} ${h}" width="${w}" height="${h}" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif">${STYLE}${body}</svg>`
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 ${y} ${w} ${h}" width="${w}" height="${h}" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif">${styleFor(body)}${body}</svg>`
 
 /**
  * The timeline, drawn as rows: clicks on a drawing never reach a mod, so each row
